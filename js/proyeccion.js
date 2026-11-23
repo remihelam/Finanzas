@@ -1,7 +1,7 @@
 // Motor de proyección en FLUJO DE EFECTIVO, con tarjetas a mes vencido:
 // lo que consumes con tarjeta en un mes sale de tu cuenta al mes siguiente.
 // Es puro (no toca pantalla ni almacenamiento) para poder probarlo aparte.
-import { addMonths, parseYm, vecesMes, rangoMeses } from './fechas.js';
+import { addMonths, parseYm, vecesMes, rangoMeses, ymActual } from './fechas.js';
 
 export function escenarioActivo(config) {
   return config.escenarios[config.escenario] || config.escenarios.base;
@@ -89,6 +89,12 @@ export function indexarGastos(movs) {
 }
 const idxPorDefecto = () => indexarGastos(proveedorMovs());
 
+// Mes en curso (se puede fijar en pruebas). Un mes anterior a este ya terminó.
+let mesEnCurso = () => ymActual();
+export function usarMesActual(fn) {
+  mesEnCurso = fn;
+}
+
 // Lo que consumes en el mes `t`, separado por cómo se paga.
 // Lo registrado manda: cada gasto cuenta en la cuenta o tarjeta con que lo pagaste.
 // Presupuestos: lo registrado + lo que falta por gastar (si te pasas, cuenta lo real).
@@ -139,7 +145,9 @@ function consumoMes(config, esc, t, idx, esCorte = false) {
     const montoP = val(p.id, presupuestoPlan(p, t, esc));
     const reales = gastos.filter((g) => deCategoria.get(g.categoria) === p.id || (n === 0 && huerfanos.includes(g)));
     const gastado = reales.reduce((a, g) => a + (Number(g.monto) || 0), 0);
-    const porGastar = Math.max(0, montoP - gastado);
+    // Cuando el mes ya terminó, lo que no gastaste no se cobra: cuenta solo lo registrado.
+    const cerrado = t < mesEnCurso();
+    const porGastar = cerrado ? 0 : Math.max(0, montoP - gastado);
     const def = p.pago === 'tarjeta' ? p.tarjeta || '__tarjeta' : 'efectivo';
     const cuentas = porCuenta(reales);
     if (!cuentas.has(def)) cuentas.set(def, 0);
@@ -157,6 +165,7 @@ function consumoMes(config, esc, t, idx, esCorte = false) {
         real, porGastar: esDef ? porGastar : 0, monto: real + (esDef ? porGastar : 0),
         plan: montoP, presupuesto: montoP, gastado, editable: esDef, ajustado: esDef && aj[p.id] != null,
         compras: compras(k), otras: esDef ? otras : [],
+        cerrado, noGastado: esDef && cerrado ? Math.max(0, montoP - gastado) : 0,
       };
     });
     return items;

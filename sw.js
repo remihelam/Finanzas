@@ -1,5 +1,5 @@
 // Service worker: permite abrir la app sin conexión. Sube VERSION cuando cambies archivos.
-const VERSION = 'finanzas-v6';
+const VERSION = 'finanzas-v7';
 const ARCHIVOS = [
   './', 'index.html', 'styles.css', 'config.js', 'manifest.webmanifest',
   'vendor/preact-htm.js', 'vendor/supabase.js',

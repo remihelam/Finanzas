@@ -145,6 +145,12 @@ export function pagoSugerido(config, catId) {
 // Texto de apoyo para un concepto: registrado vs. por gastar, o "registrado" si ya lo pagaste.
 export function detalleConsumo(x) {
   if (x.esPresupuesto && x.fueraDeHabitual) return `De tu presupuesto (lo usual es ${x.habitual})`;
+  if (x.esPresupuesto && x.cerrado) {
+    const partes = [`Mes cerrado: registrado ${dinero(x.real)}`];
+    if (x.noGastado) partes.push(`no gastaste ${dinero(x.noGastado)} (se queda en tu ahorro)`);
+    for (const o of x.otras || []) partes.push(`${dinero(o.monto)} pagado con ${o.nombre}`);
+    return partes.join(' · ');
+  }
   if (x.esPresupuesto) {
     const partes = [];
     if (x.real) partes.push(`registrado ${dinero(x.real)}`);

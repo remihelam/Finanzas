@@ -70,26 +70,95 @@ function presupuestoPlan(p, t, esc) {
   return monto * Math.pow(1 + pct(esc.inflacion), vecesMes(base, t, 1));
 }
 
-// Lo que consumes en el mes `t` (fijos + presupuestos), separado por cómo se paga.
-function consumoMes(config, esc, t) {
+// ---- Movimientos registrados ----
+// La app indica de dónde salen los movimientos; en pruebas no hay ninguno.
+let proveedorMovs = () => [];
+export function usarMovimientos(fn) {
+  proveedorMovs = fn;
+}
+// Gastos registrados agrupados por mes ('AAAA-MM' → lista).
+export function indexarGastos(movs) {
+  const idx = new Map();
+  for (const m of movs || []) {
+    if (m.tipo !== 'gasto' || !m.fecha || m.deleted) continue;
+    const t = m.fecha.slice(0, 7);
+    if (!idx.has(t)) idx.set(t, []);
+    idx.get(t).push(m);
+  }
+  return idx;
+}
+const idxPorDefecto = () => indexarGastos(proveedorMovs());
+
+// Lo que consumes en el mes `t`, separado por cómo se paga.
+// Lo registrado manda: cada gasto cuenta en la cuenta o tarjeta con que lo pagaste.
+// Presupuestos: lo registrado + lo que falta por gastar (si te pasas, cuenta lo real).
+// Fijos: si registraste el pago, cuenta el monto real; si no, el planeado.
+// `esCorte`: en el mes del cierre los fijos planeados ya están en tus saldos o en las deudas del mes siguiente.
+function consumoMes(config, esc, t, idx, esCorte = false) {
+  idx = idx || idxPorDefecto();
   const aj = (config.ajustes || {})[t] || {};
   const val = (id, plan) => (aj[id] != null ? aj[id] : plan);
-  const fijos = config.fijos
-    .map((f) => {
-      const plan = montoFijo(f, t, esc);
-      return { id: f.id, nombre: f.nombre, icono: f.icono, dia: f.dia, pago: f.pago || 'debito', tarjeta: f.pago === 'tarjeta' ? f.tarjeta || null : null, plan, monto: val(f.id, plan), ajustado: aj[f.id] != null };
-    })
-    .filter((x) => x.plan > 0 || x.ajustado);
-  const presupuestos = config.presupuestos.map((p) => {
-    const plan = presupuestoPlan(p, t, esc);
-    return { id: p.id, nombre: p.nombre, icono: p.icono, pago: p.pago || 'debito', tarjeta: p.pago === 'tarjeta' ? p.tarjeta || null : null, plan, monto: val(p.id, plan), ajustado: aj[p.id] != null, esPresupuesto: true };
-  });
+  const gastos = idx.get(t) || [];
+  const tarjetaDe = (cuenta) => (cuenta && config.tarjetas.some((k) => k.id === cuenta) ? cuenta : null);
+  const nombreDe = (cuenta) => {
+    const k = config.tarjetas.find((x) => x.id === cuenta);
+    return k ? k.nombre : 'débito';
+  };
+  const porCuenta = (lista) => {
+    const m = new Map();
+    for (const g of lista) {
+      const k = tarjetaDe(g.cuenta) || 'efectivo';
+      m.set(k, (m.get(k) || 0) + (Number(g.monto) || 0));
+    }
+    return m;
+  };
+  const pagoDe = (k) => (k === 'efectivo' ? { pago: 'debito', tarjeta: null } : { pago: 'tarjeta', tarjeta: k === '__tarjeta' ? null : k });
+
+  const fijos = [];
+  for (const f of config.fijos) {
+    const plan = montoFijo(f, t, esc);
+    const montoPlan = val(f.id, plan);
+    const ajustado = aj[f.id] != null;
+    const base = { ref: f.id, nombre: f.nombre, icono: f.icono, dia: f.dia, plan: montoPlan, ajustado };
+    const reales = gastos.filter((g) => g.categoria === f.id);
+    if (reales.length) {
+      for (const [k, monto] of porCuenta(reales)) fijos.push({ ...base, id: f.id + '@' + k, ...pagoDe(k), monto, real: monto, registrado: true, editable: false });
+    } else if (!esCorte && (plan > 0 || ajustado)) {
+      fijos.push({ ...base, id: f.id, pago: f.pago || 'debito', tarjeta: f.pago === 'tarjeta' ? f.tarjeta || null : null, monto: montoPlan, editable: true });
+    }
+  }
+
+  const deCategoria = new Map();
+  for (const p of config.presupuestos) for (const c of p.categorias) deCategoria.set(c.id, p.id);
+  const fijoIds = new Set(config.fijos.map((f) => f.id));
+  const huerfanos = gastos.filter((g) => !fijoIds.has(g.categoria) && !deCategoria.has(g.categoria));
+  const presupuestos = config.presupuestos.map((p, n) => {
+    const montoP = val(p.id, presupuestoPlan(p, t, esc));
+    const reales = gastos.filter((g) => deCategoria.get(g.categoria) === p.id || (n === 0 && huerfanos.includes(g)));
+    const gastado = reales.reduce((a, g) => a + (Number(g.monto) || 0), 0);
+    const porGastar = Math.max(0, montoP - gastado);
+    const def = p.pago === 'tarjeta' ? p.tarjeta || '__tarjeta' : 'efectivo';
+    const cuentas = porCuenta(reales);
+    if (!cuentas.has(def)) cuentas.set(def, 0);
+    const items = [...cuentas.entries()].map(([k, real]) => {
+      const esDef = k === def;
+      return {
+        id: esDef ? p.id : p.id + '@' + k, ref: p.id, esPresupuesto: true, icono: p.icono,
+        nombre: esDef ? p.nombre : `${p.nombre} (${nombreDe(k)})`,
+        ...pagoDe(k),
+        real, porGastar: esDef ? porGastar : 0, monto: real + (esDef ? porGastar : 0),
+        plan: montoP, presupuesto: montoP, gastado, editable: esDef, ajustado: esDef && aj[p.id] != null,
+      };
+    });
+    return items;
+  }).flat();
+
   const todos = [...fijos, ...presupuestos];
   return {
     fijos,
     presupuestos,
     debito: todos.filter((x) => x.pago !== 'tarjeta'),
-    tarjeta: todos.filter((x) => x.pago === 'tarjeta'),
+    tarjeta: todos.filter((x) => x.pago === 'tarjeta' && x.monto > 0),
   };
 }
 
@@ -119,8 +188,9 @@ function agruparPorTarjeta(config, deudas, previo) {
 
 // Flujo completo de un mes.
 // `previo`: lo consumido con tarjeta el mes anterior (se paga este mes), como lista de conceptos.
-export function flujoMes(config, t, { esc, previo } = {}) {
+export function flujoMes(config, t, { esc, previo, idx } = {}) {
   esc = esc || escenarioActivo(config);
+  idx = idx || idxPorDefecto();
   const aj = (config.ajustes || {})[t] || {};
   const val = (id, plan) => (aj[id] != null ? aj[id] : plan);
 
@@ -129,8 +199,11 @@ export function flujoMes(config, t, { esc, previo } = {}) {
   const bonos = bonosPlan(config, esc, t).map((b) => ({ ...b, icono: '🎁', monto: val(b.id, b.plan), ajustado: aj[b.id] != null }));
   const ingresos = sueldo.monto + suma(bonos);
 
-  const consumo = consumoMes(config, esc, t);
-  if (previo == null) previo = consumoMes(config, esc, addMonths(t, -1)).tarjeta;
+  const consumo = consumoMes(config, esc, t, idx, t <= config.ahorro.fechaCorte);
+  if (previo == null) {
+    const ant = addMonths(t, -1);
+    previo = consumoMes(config, esc, ant, idx, ant <= config.ahorro.fechaCorte).tarjeta;
+  }
   const consumoPrevio = suma(previo);
   const deudas = config.deudas.filter((d) => d.mes === t);
   const tPlan = suma(deudas) + consumoPrevio;
@@ -175,15 +248,18 @@ export function reparto(general, metas) {
   return { fondo, enganche };
 }
 
-export function proyectar(config, escOverride) {
+export function proyectar(config, escOverride, movs) {
   const esc = escOverride || escenarioActivo(config);
+  const idx = movs ? indexarGastos(movs) : idxPorDefecto();
   const inicio = addMonths(config.ahorro.fechaCorte, 1);
   const r = Math.pow(1 + pct(esc.rendimiento), 1 / 12) - 1;
   const a = arranque(config);
   let general = a.general;
   let retiro = a.retiro;
   const porPagar = config.ahorro.tarjetasPorPagar || 0;
-  let previo = porPagar ? [{ id: 'cierre', nombre: "Compras con tarjeta del mes de cierre", tarjeta: null, monto: porPagar }] : [];
+  // Lo cargado a tarjetas en el mes del cierre se paga el primer mes proyectado.
+  let previo = consumoMes(config, esc, config.ahorro.fechaCorte, idx, true).tarjeta;
+  if (porPagar) previo = [...previo, { id: 'cierre', nombre: 'Otros cargos del mes de cierre', tarjeta: null, monto: porPagar }];
   const meses = [];
   const hitos = { fondo: null, enganche: null, minimo: { t: null, saldo: Infinity }, negativos: [] };
   const metaTotal = config.metas.fondo + config.metas.enganche;
@@ -191,7 +267,7 @@ export function proyectar(config, escOverride) {
   if (general >= metaTotal) hitos.enganche = config.ahorro.fechaCorte;
 
   for (const t of rangoMeses(inicio, config.horizonte)) {
-    const f = flujoMes(config, t, { esc, previo });
+    const f = flujoMes(config, t, { esc, previo, idx });
     const saldoInicial = general;
     const rendGeneral = general > 0 ? general * r : 0;
     const rendRetiro = retiro > 0 ? retiro * r : 0;

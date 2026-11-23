@@ -3,6 +3,7 @@ import { Toasts, toast } from './ui.js';
 import { cargar, hayDatos, getState, subscribe, movimientos, iniciarCon, iniciarVacio } from './store.js';
 import { iniciarSync, infoSync, onSync, sincronizar } from './sync.js';
 import { configVacia } from './defaults.js';
+import { usarMovimientos } from './proyeccion.js';
 import { nombreMes, ymActual } from './fechas.js';
 import { Inicio } from './pantallas/inicio.js';
 import { Movimientos } from './pantallas/movimientos.js';
@@ -101,6 +102,7 @@ function App() {
 
 async function main() {
   cargar();
+  usarMovimientos(() => (hayDatos() ? movimientos() : []));
   if (!hayDatos()) {
     try {
       const r = await fetch('datos/mis-datos.json', { cache: 'no-store' });

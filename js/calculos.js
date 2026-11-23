@@ -1,7 +1,7 @@
 // Cálculos sobre lo real (movimientos registrados) comparado con el plan.
-import { flujoMes, proyectar, saldosActuales, reparto, arranque } from './proyeccion.js';
+import { flujoMes, proyectar, saldosActuales, reparto, arranque, indexarGastos, escenarioActivo, montoFijo } from './proyeccion.js';
 import { categoriasVariables } from './modelo.js';
-import { diasEnMes, hoyIso, ymActual, addMonths, nombreMes } from './fechas.js';
+import { diasEnMes, hoyIso, ymActual, addMonths, nombreMes, dinero } from './fechas.js';
 
 const suma = (xs) => xs.reduce((a, m) => a + (Number(m.monto) || 0), 0);
 
@@ -35,37 +35,49 @@ export function flujoDelMes(config, t, proy) {
 }
 
 export function resumenMes(config, movs, t) {
-  const f = flujoMes(config, t);
+  const idx = indexarGastos(movs);
+  const f = flujoMes(config, t, { idx });
   const delMes = movs.filter((m) => m.fecha && m.fecha.startsWith(t));
   const gastos = delMes.filter((m) => m.tipo === 'gasto');
   const fijoIds = new Set(config.fijos.map((x) => x.id));
 
-  const presupuestos = f.consumo.presupuestos.map((p) => {
-    const cats = new Set((config.presupuestos.find((x) => x.id === p.id) || { categorias: [] }).categorias.map((c) => c.id));
-    const gastado = suma(gastos.filter((m) => cats.has(m.categoria)));
-    return { ...p, gastado, restante: p.monto - gastado };
+  // Un renglón por presupuesto (aunque lo hayas pagado con varias tarjetas).
+  const presupuestos = config.presupuestos.map((p) => {
+    const items = f.consumo.presupuestos.filter((x) => x.ref === p.id);
+    const def = items.find((x) => x.editable) || items[0] || {};
+    const monto = def.presupuesto || 0;
+    const gastado = def.gastado || 0;
+    return { id: p.id, nombre: p.nombre, pago: p.pago, tarjeta: p.tarjeta, monto, gastado, restante: monto - gastado };
   });
-  // Gastos con categoría que ya no existe: cuentan en el primer presupuesto
-  const conocidas = new Set(categoriasVariables(config).map((c) => c.id));
-  const huerfanos = suma(gastos.filter((m) => !fijoIds.has(m.categoria) && !conocidas.has(m.categoria)));
-  if (huerfanos && presupuestos[0]) {
-    presupuestos[0].gastado += huerfanos;
-    presupuestos[0].restante -= huerfanos;
-  }
 
   const porCat = new Map();
   for (const m of gastos.filter((x) => !fijoIds.has(x.categoria))) porCat.set(m.categoria, (porCat.get(m.categoria) || 0) + Number(m.monto));
 
-  const fijos = f.consumo.fijos.map((x) => {
-    const real = suma(gastos.filter((m) => m.categoria === x.id));
-    return { ...x, real, pagado: real > 0 };
-  });
+  // Un renglón por gasto fijo del mes: pagado si ya registraste su pago.
+  const fijos = config.fijos
+    .map((cf) => {
+      const plan = flujoPlanFijo(f, cf.id, config, t);
+      const real = suma(gastos.filter((m) => m.categoria === cf.id));
+      if (!plan && !real) return null;
+      return { id: cf.id, nombre: cf.nombre, icono: cf.icono, dia: cf.dia, pago: cf.pago || 'debito', tarjeta: cf.tarjeta, monto: plan || real, real, pagado: real > 0 };
+    })
+    .filter(Boolean);
 
   let diasRestantes = diasEnMes(t);
   if (t === ymActual()) diasRestantes = diasEnMes(t) - Number(hoyIso().slice(8, 10)) + 1;
   else if (t < ymActual()) diasRestantes = 0;
 
   return { t, flujo: f, movs: delMes, presupuestos, fijos, porCat, diasRestantes, totalGastos: suma(gastos) };
+}
+
+// Monto planeado de un fijo en el mes (aunque en el mes del cierre no cuente para la proyección).
+function flujoPlanFijo(f, id, config, t) {
+  const it = f.consumo.fijos.find((x) => x.ref === id);
+  if (it) return it.plan;
+  const cf = config.fijos.find((x) => x.id === id);
+  const esc = escenarioActivo(config);
+  const aj = ((config.ajustes || {})[t] || {})[id];
+  return aj != null ? aj : montoFijo(cf, t, esc);
 }
 
 export function saldoTarjeta(config, movs, tarjetaId) {
@@ -128,5 +140,14 @@ export function pagoSugerido(config, catId) {
   if (item.pago === 'tarjeta') return item.tarjeta || null;
   return 'efectivo';
 }
+
+// Texto de apoyo para un concepto: registrado vs. por gastar, o "registrado" si ya lo pagaste.
+export function detalleConsumo(x) {
+  if (x.esPresupuesto && x.editable) return x.real ? `Registrado ${dinero(x.real)} · por gastar ${dinero(x.porGastar)}` : `Presupuesto ${dinero(x.presupuesto)}`;
+  if (x.esPresupuesto) return 'Registrado';
+  if (x.registrado) return 'Pago registrado';
+  return null;
+}
+
 
 export { saldosActuales };

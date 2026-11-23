@@ -1,5 +1,6 @@
 import { html, useState, useRef, useEffect, Tarjeta, Seg, Hoja, Num, toast } from '../ui.js';
 import { proyectar, resumenAnual } from '../proyeccion.js';
+import { detalleConsumo } from '../calculos.js';
 import { editarConfig } from '../store.js';
 import { dinero, dineroCorto, nombreMes, parseYm, addMonths } from '../fechas.js';
 
@@ -85,16 +86,19 @@ function Grafica({ meses, config }) {
 
 // ---------- Una línea editable ----------
 function Linea({ item, signo, onEditar, sub }) {
-  return html`<li><button class="fila fila-btn linea" onClick=${() => onEditar(item)}>
+  const contenido = html`
     <span class="fila-txt"><span class="fila-tit">${item.icono ? item.icono + ' ' : ''}${item.nombre}</span>${sub && html`<span class="fila-sub">${sub}</span>`}</span>
     ${item.ajustado && html`<span class="pill" title=${'Plan: ' + dinero(item.plan)}>ajustado</span>`}
-    <span class=${'fila-monto ' + (signo === '+' ? 'pos' : '')}>${signo}${dinero(item.monto)}</span>
+    <span class=${'fila-monto ' + (signo === '+' ? 'pos' : '')}>${signo}${dinero(item.monto)}</span>`;
+  if (item.editable === false) return html`<li class="fila linea">${contenido}<span class="lapiz" aria-hidden="true"></span></li>`;
+  return html`<li><button class="fila fila-btn linea" onClick=${() => onEditar(item)}>
+    ${contenido}
     <span class="lapiz" aria-hidden="true">✎</span>
   </button></li>`;
 }
 
 function EditarLinea({ t, item, onCerrar }) {
-  const [v, setV] = useState(Math.round(item.monto));
+  const [v, setV] = useState(Math.round(item.esPresupuesto ? item.presupuesto : item.monto));
   const guardar = () => {
     editarConfig((c) => {
       c.ajustes = c.ajustes || {};
@@ -117,6 +121,7 @@ function EditarLinea({ t, item, onCerrar }) {
     <div class="form">
       <label class="campo"><span class="campo-etq">Monto para ${mesLargo(t)}</span>
         <${Num} valor=${v} onCambio=${setV} /></label>
+      ${item.id === 'tarjetas' && html`<p class="nota-alerta">Si fijas el total a mano, los gastos que registres con tarjeta ya no lo moverán. Mejor ajusta la deuda de cada tarjeta en <strong>Tarjetas</strong>.</p>`}
       <p class="muted chico">Monto del plan: <strong>${dinero(item.plan)}</strong>. Este cambio aplica <strong>solo a ${mesLargo(t)}</strong>; los meses siguientes se recalculan solos. Para cambiarlo para siempre, ve a <strong>Más</strong>.</p>
       <div class="acciones">
         ${item.ajustado && html`<button class="btn" onClick=${restablecer}>Volver al plan</button>`}
@@ -180,7 +185,7 @@ function MesPorMes({ config, ir }) {
           ${m.bonos.map((b) => html`<${Linea} item=${b} signo="+" onEditar=${setEdit} />`)}
         <//>
         <${Grupo} etiqueta="Sale de tu cuenta" signo="−" monto=${m.salidasDebito} abierto=${abiertos.cuenta} onToggle=${() => toggle('cuenta')}>
-          ${m.consumo.debito.map((x) => html`<${Linea} item=${x} signo="−" onEditar=${setEdit} />`)}
+          ${m.consumo.debito.filter((x) => x.monto > 0 || x.editable).map((x) => html`<${Linea} item=${x} signo="−" onEditar=${setEdit} sub=${detalleConsumo(x)} />`)}
         <//>
         <${Grupo} etiqueta="Pagas de tarjetas" signo="−" monto=${m.tarjetas.monto} abierto=${abiertos.tarjetas} onToggle=${() => toggle('tarjetas')}>
           ${m.tarjetas.porTarjeta.map((g) => html`<li class="sub-grupo">
@@ -205,7 +210,7 @@ function MesPorMes({ config, ir }) {
         <${Grupo} etiqueta=${html`Cargas a tarjeta en ${soloMes(m.t)}<span class="fila-sub">Lo pagas en ${soloMes(sigM)}</span>`} signo="" monto=${m.consumoTarjeta} abierto=${abiertos.cargos} onToggle=${() => toggle('cargos')}>
           ${m.consumo.tarjeta.map((x) => {
             const tj = config.tarjetas.find((k) => k.id === x.tarjeta);
-            return html`<${Linea} item=${x} signo="" onEditar=${setEdit} sub=${(x.esPresupuesto ? 'Presupuesto · ' : '') + (tj ? tj.nombre : 'Tarjeta sin elegir')} />`;
+            return html`<${Linea} item=${x} signo="" onEditar=${setEdit} sub=${[tj ? tj.nombre : 'Tarjeta sin elegir', detalleConsumo(x)].filter(Boolean).join(' · ')} />`;
           })}
         <//>
       </ul>

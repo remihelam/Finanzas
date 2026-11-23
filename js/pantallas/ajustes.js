@@ -1,6 +1,6 @@
 import { html, useState, useEffect, Tarjeta, Campo, Num, Hoja, toast, descargar } from '../ui.js';
 import { editarConfig, exportar, iniciarCon, movimientos as listaMovs, getState } from '../store.js';
-import { mesDeCierreSugerido, catalogo, nombreCuenta, pendientesSugeridos, flujoDelMes, mesDeTarjetas } from '../calculos.js';
+import { mesDeCierreSugerido, catalogo, nombreCuenta, pendientesSugeridos, flujoDelMes, mesDeTarjetas, detalleConsumo } from '../calculos.js';
 import { saldosActuales, proyectar } from '../proyeccion.js';
 import { infoSync, onSync, entrar, registrarse, salir, sincronizar, guardarCredenciales } from '../sync.js';
 import { dinero, nombreMes, MESES_LARGOS, uid, fechaCorta, hoyIso, addMonths } from '../fechas.js';
@@ -96,7 +96,7 @@ export function Tarjetas({ config, movs, ir }) {
                 <span class=${'fila-txt ' + (d.pagada ? 'tachado' : '')}>${d.concepto}<span class="fila-sub">Deuda · márcala al pagar</span></span></label>
               <span class="fila-monto">${dinero(d.monto)}</span>
             </li>`)}
-            ${g.consumo.map((c) => html`<li class="fila"><span class="fila-txt">${c.icono ? c.icono + ' ' : ''}${c.nombre}<span class="fila-sub">Cargado en ${nombreMes(addMonths(t, -1), true)}</span></span><span class="fila-monto">${dinero(c.monto)}</span></li>`)}
+            ${g.consumo.map((c) => html`<li class="fila"><span class="fila-txt">${c.icono ? c.icono + ' ' : ''}${c.nombre}<span class="fila-sub">${[`Cargado en ${nombreMes(addMonths(t, -1), true)}`, detalleConsumo(c)].filter(Boolean).join(' · ')}</span></span><span class="fila-monto">${dinero(c.monto)}</span></li>`)}
             ${g.id && html`<li><button class="enlace" onClick=${() => setEditar(g.id)}>Configurar ${g.nombre}</button></li>`}
           </ul>`}
         </li>`;

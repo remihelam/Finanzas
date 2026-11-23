@@ -24,6 +24,7 @@ export function bonosMes(config, esc, t) {
     if (!b.seguro && !config.incluirInciertos) continue;
     let monto;
     if (b.montosPorAnio && b.montosPorAnio[y] != null) monto = b.montosPorAnio[y];
+    else if (b.dias) monto = (sueldoMes(config, esc, t) / 30) * b.dias;
     else monto = b.monto * (b.crece ? Math.pow(1 + pct(esc.aumento), Math.max(0, y - b.anioBase)) : 1);
     out.push({ id: b.id, nombre: b.nombre, monto, seguro: b.seguro });
   }

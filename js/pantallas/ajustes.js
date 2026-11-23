@@ -204,8 +204,10 @@ export function Sueldo({ config, ir }) {
       <${Campo} etiqueta="Nombre"><input value=${b.nombre} onChange=${(e) => updB(b.id, (x) => { x.nombre = e.target.value; })} /><//>
       <div class="dos-col">
         <${Campo} etiqueta="Mes en que llega"><select value=${b.mes} onChange=${(e) => updB(b.id, (x) => { x.mes = Number(e.target.value); })}>${MESES_OPC}</select><//>
-        <${Campo} etiqueta=${'Monto en ' + b.anioBase}><${Num} valor=${b.monto} onCambio=${(v) => updB(b.id, (x) => { x.monto = n0(v); })} /><//>
+        <${Campo} etiqueta="Días de sueldo" ayuda="Si se calcula por días; si no, déjalo vacío"><${Num} valor=${b.dias} placeholder="—" onCambio=${(v) => updB(b.id, (x) => { x.dias = v || undefined; })} /><//>
       </div>
+      ${!b.dias && html`<${Campo} etiqueta=${'Monto en ' + b.anioBase}><${Num} valor=${b.monto} onCambio=${(v) => updB(b.id, (x) => { x.monto = n0(v); })} /><//>`}
+      ${b.dias && html`<p class="muted chico">Equivale a ${dinero((config.sueldo.neto / 30) * b.dias)} con tu sueldo actual, y sube con cada aumento.</p>`}
       <div class="dos-col">
         <${Campo} etiqueta="Año de referencia"><${Num} valor=${b.anioBase} onCambio=${(v) => updB(b.id, (x) => { x.anioBase = n0(v); })} /><//>
         <${Campo} etiqueta="Empieza en"><input type="month" value=${b.desde || ''} onChange=${(e) => updB(b.id, (x) => { x.desde = e.target.value; })} /><//>

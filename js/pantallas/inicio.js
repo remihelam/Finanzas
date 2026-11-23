@@ -68,7 +68,10 @@ export function Inicio({ config, movs, abrirRegistro, ir }) {
         llevas ${dinero(principal.gastado)} de ${dinero(principal.monto)}
         ${principal.restante < 0 ? html` · <strong class="neg">te pasaste ${dinero(-principal.restante)}</strong>` : ''}
       </p>
-      ${principal.pago === 'tarjeta' && html`<p class="hero-nota">💳 Se carga a ${tjPrincipal ? tjPrincipal.nombre : 'tarjeta'} y lo pagas en ${mesCorto(addMonths(t, 1))}.</p>`}
+      ${principal.porCuenta && principal.porCuenta.length > 0 && html`<div class="chips-cuenta" aria-label="Lo gastado por tarjeta">
+        ${principal.porCuenta.map((c) => html`<span class="chip-pago tarjeta">💳 ${c.nombre} ${dinero(c.monto)}</span>`)}
+      </div>`}
+      ${principal.pago === 'tarjeta' && html`<p class="hero-nota">Lo que gastes con tarjeta en ${mesCorto(t)} lo pagas en ${mesCorto(addMonths(t, 1))}, en la tarjeta que hayas usado (lo usual: ${tjPrincipal ? tjPrincipal.nombre : 'tu tarjeta'}).</p>`}
       ${otros.map((p) => html`<div class="mini-presu">
         <div class="meta-top"><span>${p.nombre}</span><span class="num">${dinero(p.restante)} disponibles</span></div>
         <${Barra} valor=${p.gastado} max=${p.monto} estado=${estadoDe(p)} />

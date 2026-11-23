@@ -122,7 +122,10 @@ function consumoMes(config, esc, t, idx, esCorte = false) {
     const base = { ref: f.id, nombre: f.nombre, icono: f.icono, dia: f.dia, plan: montoPlan, ajustado };
     const reales = gastos.filter((g) => g.categoria === f.id);
     if (reales.length) {
-      for (const [k, monto] of porCuenta(reales)) fijos.push({ ...base, id: f.id + '@' + k, ...pagoDe(k), monto, real: monto, registrado: true, editable: false });
+      for (const [k, monto] of porCuenta(reales)) {
+        const compras = reales.filter((g) => (tarjetaDe(g.cuenta) || 'efectivo') === k).map((g) => ({ id: g.id, fecha: g.fecha, categoria: g.categoria, monto: Number(g.monto) || 0, nota: g.nota }));
+        fijos.push({ ...base, id: f.id + '@' + k, ...pagoDe(k), monto, real: monto, registrado: true, editable: false, compras });
+      }
     } else if (!esCorte && (plan > 0 || ajustado)) {
       fijos.push({ ...base, id: f.id, pago: f.pago || 'debito', tarjeta: f.pago === 'tarjeta' ? f.tarjeta || null : null, monto: montoPlan, editable: true });
     }
@@ -140,14 +143,20 @@ function consumoMes(config, esc, t, idx, esCorte = false) {
     const def = p.pago === 'tarjeta' ? p.tarjeta || '__tarjeta' : 'efectivo';
     const cuentas = porCuenta(reales);
     if (!cuentas.has(def)) cuentas.set(def, 0);
+    const llave = (g) => tarjetaDe(g.cuenta) || 'efectivo';
+    const compras = (k) => reales.filter((g) => llave(g) === k).map((g) => ({ id: g.id, fecha: g.fecha, categoria: g.categoria, monto: Number(g.monto) || 0, nota: g.nota }));
+    const habitual = def === 'efectivo' ? 'débito' : nombreDe(def);
+    // Lo que de este presupuesto pagaste con otra cuenta o tarjeta (para mostrarlo en la habitual).
+    const otras = [...cuentas.entries()].filter(([k, real]) => k !== def && real > 0).map(([k, real]) => ({ cuenta: k, nombre: nombreDe(k), monto: real }));
     const items = [...cuentas.entries()].map(([k, real]) => {
       const esDef = k === def;
       return {
         id: esDef ? p.id : p.id + '@' + k, ref: p.id, esPresupuesto: true, icono: p.icono,
-        nombre: esDef ? p.nombre : `${p.nombre} (${nombreDe(k)})`,
+        nombre: p.nombre, presupuestoNombre: p.nombre, habitual, fueraDeHabitual: !esDef,
         ...pagoDe(k),
         real, porGastar: esDef ? porGastar : 0, monto: real + (esDef ? porGastar : 0),
         plan: montoP, presupuesto: montoP, gastado, editable: esDef, ajustado: esDef && aj[p.id] != null,
+        compras: compras(k), otras: esDef ? otras : [],
       };
     });
     return items;

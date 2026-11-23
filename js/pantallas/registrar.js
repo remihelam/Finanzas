@@ -1,8 +1,8 @@
 // Registro rápido: monto → categoría → forma de pago (se guarda solo).
 import { html, useState, Hoja, Seg, Campo, toast } from '../ui.js';
-import { agregarMov, editarMov, borrarMov, getState } from '../store.js';
-import { catalogo, cuentasPago, pagoSugerido } from '../calculos.js';
-import { dinero, hoyIso, fechaCorta } from '../fechas.js';
+import { agregarMov, editarMov, borrarMov, getState, movimientos } from '../store.js';
+import { catalogo, cuentasPago, pagoSugerido, resumenMes } from '../calculos.js';
+import { dinero, hoyIso, fechaCorta, nombreMes, addMonths } from '../fechas.js';
 
 function ayer() {
   const d = new Date();
@@ -31,7 +31,15 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
   const guardar = (cuenta) => {
     const id = agregarMov({ tipo, monto: n, categoria: tipo === 'pago' ? null : categoria, cuenta, fecha, nota: nota.trim() || undefined });
     const cat = catalogo(config).get(categoria);
-    const texto = tipo === 'pago' ? `Pago de ${dinero(n)} registrado` : `${dinero(n)} · ${cat ? cat.nombre : ''}`;
+    let texto = tipo === 'pago' ? `Pago de ${dinero(n)} registrado` : `${dinero(n)} · ${cat ? cat.nombre : ''}`;
+    if (tipo === 'gasto') {
+      const t = fecha.slice(0, 7);
+      const tj = config.tarjetas.find((x) => x.id === cuenta);
+      const r = resumenMes(config, movimientos(), t);
+      const pres = r.presupuestos.find((x) => config.presupuestos.find((p) => p.id === x.id && p.categorias.some((c) => c.id === categoria)));
+      if (tj) texto += ` · se paga con ${tj.nombre} en ${nombreMes(addMonths(t, 1), true).split(' ')[0]}`;
+      if (pres) texto += ` · te quedan ${dinero(pres.restante)}`;
+    }
     toast(texto, { texto: 'Deshacer', fn: () => borrarMov(id) });
     onCerrar();
   };
@@ -87,7 +95,7 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
       <h3 class="paso-titulo">${tipo === 'pago' ? '¿Qué tarjeta pagaste?' : tipo === 'ingreso' ? '¿A dónde llegó?' : '¿Cómo pagaste?'}</h3>
       <div class="rejilla">
         ${(tipo === 'pago' ? config.tarjetas.map((t) => ({ ...t, icono: '💳' })) : cuentasPago(config)).map(
-          (c) => html`<button class=${'opcion' + (tipo === 'gasto' && c.id === sugerida ? ' sugerida' : '')} onClick=${() => guardar(c.id)}><span class="op-ico">${c.icono}</span>${c.nombre}</button>`
+          (c) => html`<button class=${'opcion' + (tipo === 'gasto' && c.id === sugerida ? ' sugerida' : '')} onClick=${() => guardar(c.id)}><span class="op-ico">${c.icono}</span>${c.nombre}${tipo === 'gasto' && c.id === sugerida ? html`<span class="op-usual">usual</span>` : ''}</button>`
         )}
       </div>
     </div>`}

@@ -67,6 +67,7 @@ export function Tarjetas({ config, movs, ir }) {
   const conPago = new Set(m.tarjetas.porTarjeta.map((g) => g.id));
   const sinPago = config.tarjetas.filter((x) => !conPago.has(x.id));
   const compras = (id) => movs.filter((x) => x.tipo === 'gasto' && x.cuenta === id && x.fecha.startsWith(t)).reduce((a, x) => a + Number(x.monto), 0);
+  const cat = catalogo(config);
 
   return html`<${Sub} titulo="Tarjetas" ir=${ir}>
     <div class="nav-mes">
@@ -96,7 +97,15 @@ export function Tarjetas({ config, movs, ir }) {
                 <span class=${'fila-txt ' + (d.pagada ? 'tachado' : '')}>${d.concepto}<span class="fila-sub">Deuda · márcala al pagar</span></span></label>
               <span class="fila-monto">${dinero(d.monto)}</span>
             </li>`)}
-            ${g.consumo.map((c) => html`<li class="fila"><span class="fila-txt">${c.icono ? c.icono + ' ' : ''}${c.nombre}<span class="fila-sub">${[`Cargado en ${nombreMes(addMonths(t, -1), true)}`, detalleConsumo(c)].filter(Boolean).join(' · ')}</span></span><span class="fila-monto">${dinero(c.monto)}</span></li>`)}
+            ${g.consumo.map((c) => html`<li class="fila-bloque">
+              <div class="fila"><span class="fila-txt">${c.icono ? c.icono + ' ' : ''}${c.nombre}<span class="fila-sub">${[`Cargado en ${nombreMes(addMonths(t, -1), true)}`, detalleConsumo(c)].filter(Boolean).join(' · ')}</span></span><span class="fila-monto">${dinero(c.monto)}</span></div>
+              ${(c.compras || []).length > 0 && html`<ul class="compras">
+                ${c.compras.map((k) => {
+                  const ca = cat.get(k.categoria) || { icono: '📦', nombre: 'Otros' };
+                  return html`<li><span>${fechaCorta(k.fecha)} · ${ca.icono} ${ca.nombre}${k.nota ? ' · ' + k.nota : ''}</span><span class="num">${dinero(k.monto)}</span></li>`;
+                })}
+              </ul>`}
+            </li>`)}
             ${g.id && html`<li><button class="enlace" onClick=${() => setEditar(g.id)}>Configurar ${g.nombre}</button></li>`}
           </ul>`}
         </li>`;

@@ -47,7 +47,8 @@ export function resumenMes(config, movs, t) {
     const def = items.find((x) => x.editable) || items[0] || {};
     const monto = def.presupuesto || 0;
     const gastado = def.gastado || 0;
-    return { id: p.id, nombre: p.nombre, pago: p.pago, tarjeta: p.tarjeta, monto, gastado, restante: monto - gastado };
+    const porCuenta = items.filter((x) => x.real > 0).sort((a, b) => a.fueraDeHabitual - b.fueraDeHabitual || b.real - a.real).map((x) => ({ nombre: x.fueraDeHabitual ? (x.pago === 'tarjeta' ? (config.tarjetas.find((k) => k.id === x.tarjeta) || {}).nombre || 'Tarjeta' : 'Débito') : x.habitual, monto: x.real }));
+    return { id: p.id, nombre: p.nombre, pago: p.pago, tarjeta: p.tarjeta, monto, gastado, restante: monto - gastado, porCuenta };
   });
 
   const porCat = new Map();
@@ -143,8 +144,16 @@ export function pagoSugerido(config, catId) {
 
 // Texto de apoyo para un concepto: registrado vs. por gastar, o "registrado" si ya lo pagaste.
 export function detalleConsumo(x) {
-  if (x.esPresupuesto && x.editable) return x.real ? `Registrado ${dinero(x.real)} · por gastar ${dinero(x.porGastar)}` : `Presupuesto ${dinero(x.presupuesto)}`;
-  if (x.esPresupuesto) return 'Registrado';
+  if (x.esPresupuesto && x.fueraDeHabitual) return `De tu presupuesto (lo usual es ${x.habitual})`;
+  if (x.esPresupuesto) {
+    const partes = [];
+    if (x.real) partes.push(`registrado ${dinero(x.real)}`);
+    if (x.real || x.otras.length) partes.push(`por gastar ${dinero(x.porGastar)}`);
+    else partes.push(`presupuesto ${dinero(x.presupuesto)}`);
+    for (const o of x.otras || []) partes.push(`${dinero(o.monto)} pagado con ${o.nombre}`);
+    const txt = partes.join(' · ');
+    return txt.charAt(0).toUpperCase() + txt.slice(1);
+  }
   if (x.registrado) return 'Pago registrado';
   return null;
 }

@@ -407,3 +407,12 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .chev-g { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--tinta-3); }
 .chev-g::before { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
 .chev-g.abierto::before { transform: rotate(45deg) translate(-2px, -2px); }
+.chips-cuenta { display: flex; flex-wrap: wrap; gap: 6px; }
+.fila-bloque { border-bottom: 1px solid var(--borde); }
+.fila-bloque .fila { border-bottom: none; }
+.detalle > li.fila-bloque:last-child { border-bottom: none; }
+.compras { list-style: none; margin: -4px 0 8px; padding: 0 0 0 14px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--tinta-2); }
+.compras li { display: flex; justify-content: space-between; gap: 8px; }
+.op-usual { font-size: 10px; font-weight: 700; color: var(--acento); text-transform: uppercase; letter-spacing: 0.04em; }
+.toast { max-width: min(560px, calc(100% - 32px)); }
+.toast { width: max-content; line-height: 1.35; }

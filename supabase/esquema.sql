@@ -20,7 +20,7 @@ create table if not exists public.config (
 
 -- Marca la hora del servidor en cada cambio (sirve para saber qué falta sincronizar).
 create or replace function public.tocar_server_updated() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin
   new.server_updated = now();
   return new;
@@ -32,6 +32,10 @@ create trigger movimientos_tocar before insert or update on public.movimientos
 drop trigger if exists config_tocar on public.config;
 create trigger config_tocar before insert or update on public.config
   for each row execute function public.tocar_server_updated();
+
+-- Permite a los usuarios con sesión usar las tablas desde la app (los proyectos nuevos no lo hacen solos).
+grant select, insert, update, delete on table public.movimientos to authenticated;
+grant select, insert, update, delete on table public.config to authenticated;
 
 -- Seguridad: cada usuario solo ve y modifica sus propias filas.
 alter table public.movimientos enable row level security;

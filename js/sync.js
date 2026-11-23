@@ -105,7 +105,7 @@ function traducir(msg) {
 }
 
 export async function sincronizar() {
-  if (!cliente || !usuario) return;
+  if (!cliente || !usuario || !getState()) return;
   if (enCurso) {
     pendiente = true;
     return;
@@ -151,7 +151,7 @@ export async function sincronizar() {
     const cfgSubida = st.config.updatedAt;
     if (filaCfg && filaCfg.updated_at > (st.config.updatedAt || 0)) {
       cfgRemota = filaCfg.data;
-    } else if (!filaCfg || st.sync.configDirty) {
+    } else if (!st.config.vacia && (!filaCfg || st.sync.configDirty)) {
       const { error } = await cliente.from('config').upsert({ user_id: usuario.id, data: st.config, updated_at: st.config.updatedAt });
       if (error) throw error;
     }

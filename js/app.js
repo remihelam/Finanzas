@@ -1,7 +1,7 @@
 import { html, render, useState, useEffect } from '../vendor/preact-htm.js';
 import { Toasts, toast } from './ui.js';
 import { cargar, hayDatos, getState, subscribe, movimientos, iniciarCon, iniciarVacio } from './store.js';
-import { iniciarSync, infoSync, onSync } from './sync.js';
+import { iniciarSync, infoSync, onSync, sincronizar } from './sync.js';
 import { configVacia } from './defaults.js';
 import { nombreMes, ymActual } from './fechas.js';
 import { Inicio } from './pantallas/inicio.js';
@@ -32,7 +32,7 @@ function Bienvenida() {
     <h1>Mis finanzas</h1>
     <p class="muted">Control diario de gastos y proyección a 7 años.</p>
     <label class="btn btn-primario btn-ancho">📂 Cargar mis datos iniciales<input type="file" accept=".json,application/json" hidden onChange=${importar} /></label>
-    <button class="btn btn-ancho" onClick=${() => { iniciarVacio(configVacia()); location.hash = '#cuenta'; }}>☁️ Ya la uso en otro dispositivo</button>
+    <button class="btn btn-ancho" onClick=${() => { iniciarVacio(configVacia()); location.hash = '#cuenta'; sincronizar(); }}>☁️ Ya la uso en otro dispositivo</button>
     <button class="btn btn-ancho btn-texto" onClick=${() => iniciarCon({ config: configVacia() })}>Empezar desde cero</button>
   </div>`;
 }

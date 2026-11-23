@@ -45,7 +45,7 @@ export function cargar() {
 
 function estadoNuevo(config, movimientos = []) {
   const s = {
-    config: { ...config, updatedAt: config.updatedAt || Date.now() },
+    config: { ...config, updatedAt: config.updatedAt ?? Date.now() },
     movimientos: {},
     sync: { configDirty: true, dirty: [], lastPull: null },
     prefs: { ultimaCuenta: 'efectivo' },
@@ -65,7 +65,8 @@ export function iniciarCon(datos) {
 
 // Estado vacío para un dispositivo nuevo que bajará los datos de la nube.
 export function iniciarVacio(configVacia) {
-  state = estadoNuevo({ ...configVacia, updatedAt: 0 });
+  // `vacia` impide subir esta configuración: solo sirve para recibir la de la nube.
+  state = estadoNuevo({ ...configVacia, updatedAt: 0, vacia: true });
   state.sync.configDirty = false;
   emitir({ local: false });
 }
@@ -105,6 +106,7 @@ export function borrarMov(id) {
 export function editarConfig(fn) {
   const c = structuredClone(state.config);
   fn(c);
+  delete c.vacia;
   c.updatedAt = Date.now();
   state.config = c;
   state.sync.configDirty = true;

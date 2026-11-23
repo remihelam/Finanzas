@@ -1,5 +1,6 @@
 // Estado de la app: se guarda en el dispositivo (localStorage) y se sincroniza con Supabase.
 import { uid, hoyIso } from './fechas.js';
+import { migrar } from './modelo.js';
 
 const KEY = 'finanzas:v1';
 let state = null;
@@ -40,12 +41,13 @@ export function cargar() {
     state = null;
   }
   if (state && !state.sync) state.sync = { configDirty: false, dirty: [], lastPull: null };
+  if (state && state.config) state.config = migrar(state.config);
   return state;
 }
 
 function estadoNuevo(config, movimientos = []) {
   const s = {
-    config: { ...config, updatedAt: config.updatedAt ?? Date.now() },
+    config: migrar({ ...config, updatedAt: config.updatedAt ?? Date.now() }),
     movimientos: {},
     sync: { configDirty: true, dirty: [], lastPull: null },
     prefs: { ultimaCuenta: 'efectivo' },

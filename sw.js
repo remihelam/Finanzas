@@ -1,9 +1,9 @@
 // Service worker: permite abrir la app sin conexión. Sube VERSION cuando cambies archivos.
-const VERSION = 'finanzas-v2';
+const VERSION = 'finanzas-v3';
 const ARCHIVOS = [
   './', 'index.html', 'styles.css', 'config.js', 'manifest.webmanifest',
   'vendor/preact-htm.js', 'vendor/supabase.js',
-  'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/fechas.js', 'js/proyeccion.js', 'js/calculos.js', 'js/defaults.js', 'js/recordatorios.js',
+  'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/fechas.js', 'js/proyeccion.js', 'js/modelo.js', 'js/calculos.js', 'js/defaults.js', 'js/recordatorios.js',
   'js/pantallas/inicio.js', 'js/pantallas/movimientos.js', 'js/pantallas/plan.js', 'js/pantallas/registrar.js', 'js/pantallas/ajustes.js',
   'icons/icon-192.png', 'icons/apple-touch-icon.png',
 ];

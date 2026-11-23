@@ -1,5 +1,6 @@
 // Sincronización con Supabase. Si no está configurado, la app funciona solo en el dispositivo.
 import { getState, aplicarRemoto, alCambiar } from './store.js';
+import { migrar } from './modelo.js';
 
 let cliente = null;
 let usuario = null;
@@ -164,7 +165,7 @@ export async function sincronizar() {
       }
       if (nuevos.length) s.sync.lastPull = nuevos[nuevos.length - 1].server_updated;
       if (cfgRemota && !(s.sync.configDirty && s.config.updatedAt !== cfgSubida)) {
-        s.config = cfgRemota;
+        s.config = migrar(cfgRemota);
         s.sync.configDirty = false;
       } else if (s.config.updatedAt === cfgSubida) {
         s.sync.configDirty = false;

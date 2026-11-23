@@ -335,3 +335,22 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   .hitos { grid-template-columns: repeat(4, 1fr); }
   .toast { bottom: 24px; }
 }
+
+/* ---------- Mes por mes ---------- */
+.tira { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tira::-webkit-scrollbar { display: none; }
+.tira-mes { flex: none; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 64px; padding: 6px 8px; border-radius: 12px; border: 1px solid var(--borde); background: var(--superficie); font-size: 11px; color: var(--tinta-2); text-transform: capitalize; }
+.tira-mes strong { font-size: 13px; color: var(--tinta); font-variant-numeric: tabular-nums; }
+.tira-mes.neg strong { color: var(--critico); }
+.tira-mes.activo { background: var(--acento); border-color: transparent; color: var(--acento-tinta); }
+.tira-mes.activo strong { color: var(--acento-tinta); }
+.linea { gap: 8px; }
+.lapiz { color: var(--tinta-3); font-size: 14px; width: 14px; flex: none; }
+.pill { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 99px; background: var(--acento-suave); color: var(--acento); flex: none; }
+.resumen-mes .fila-total .fila-monto { font-size: 18px; }
+.mini-presu { display: flex; flex-direction: column; gap: 5px; padding-top: 6px; border-top: 1px solid var(--borde); }
+.mini-presu .meta-top { font-size: 14px; }
+.monto-input { width: 110px !important; flex: none !important; }
+@media (min-width: 960px) {
+  .pantalla > .tira, .pantalla > .resumen-mes { grid-column: 1 / -1; }
+}

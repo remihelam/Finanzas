@@ -8,19 +8,22 @@ export function configVacia() {
     sueldo: { neto: 0, base: t, mesAumento: 1 },
     bonos: [],
     fijos: [],
-    variable: {
-      monto: 0, crece: true, base: t,
-      categorias: [
-        { id: 'c-comidas', nombre: 'Comidas', icono: '🍽️' },
-        { id: 'c-super', nombre: 'Súper', icono: '🛒' },
-        { id: 'c-gasolina', nombre: 'Gasolina', icono: '⛽' },
-        { id: 'c-salidas', nombre: 'Salidas', icono: '🍻' },
-        { id: 'c-otros', nombre: 'Otros', icono: '📦' },
-      ],
-    },
+    presupuestos: [
+      {
+        id: 'p-ocio', nombre: 'Ocio', monto: 0, pago: 'tarjeta', crece: true, base: t,
+        categorias: [
+          { id: 'c-comidas', nombre: 'Comidas', icono: '🍽️' },
+          { id: 'c-super', nombre: 'Súper', icono: '🛒' },
+          { id: 'c-salidas', nombre: 'Salidas', icono: '🍻' },
+          { id: 'c-otros', nombre: 'Otros', icono: '📦' },
+        ],
+      },
+      { id: 'p-gasolina', nombre: 'Gasolina', monto: 0, pago: 'debito', crece: true, base: t, categorias: [{ id: 'c-gasolina', nombre: 'Gasolina', icono: '⛽' }] },
+    ],
+    ajustes: {},
     tarjetas: [],
     deudas: [],
-    ahorro: { fechaCorte: t, retiroPct: 5, cuentas: [{ id: 'a-general', nombre: 'Ahorro', saldo: 0, tasa: 8, destino: 'general' }], historial: {} },
+    ahorro: { fechaCorte: t, retiroPct: 5, cuentas: [{ id: 'a-general', nombre: 'Ahorro', saldo: 0, tasa: 8, destino: 'general' }], pendientes: [], tarjetasPorPagar: 0, historial: {} },
     metas: { fondo: 150000, enganche: 1000000 },
     escenarios: {
       conservador: { nombre: 'Conservador', aumento: 3, inflacion: 5, rendimiento: 7, doctorado: 8 },

@@ -1,12 +1,13 @@
 // Cálculos sobre lo real (movimientos registrados) comparado con el plan.
-import { planMes, saldosActuales, reparto } from './proyeccion.js';
-import { diasEnMes, hoyIso, ymActual, parseYm } from './fechas.js';
+import { flujoMes, proyectar, saldosActuales, reparto, arranque } from './proyeccion.js';
+import { categoriasVariables } from './modelo.js';
+import { diasEnMes, hoyIso, ymActual, addMonths, nombreMes } from './fechas.js';
 
 const suma = (xs) => xs.reduce((a, m) => a + (Number(m.monto) || 0), 0);
 
 export function catalogo(config) {
   const cat = new Map();
-  for (const c of config.variable.categorias) cat.set(c.id, { ...c, grupo: 'variable' });
+  for (const c of categoriasVariables(config)) cat.set(c.id, { ...c, grupo: 'variable' });
   for (const f of config.fijos) cat.set(f.id, { id: f.id, nombre: f.nombre, icono: f.icono || '📌', grupo: 'fijo' });
   cat.set('i-sueldo', { id: 'i-sueldo', nombre: 'Quincena', icono: '💼', grupo: 'ingreso' });
   for (const b of config.bonos) cat.set(b.id, { id: b.id, nombre: b.nombre, icono: '🎁', grupo: 'ingreso' });
@@ -23,47 +24,48 @@ export function nombreCuenta(config, id) {
   return c ? c.nombre : id || '—';
 }
 
+// Flujo de un mes: si cae dentro de la proyección, trae su saldo inicial real.
+export function flujoDelMes(config, t, proy) {
+  if (t > config.ahorro.fechaCorte) {
+    const p = proy || proyectar(config);
+    const m = p.meses.find((x) => x.t === t);
+    if (m) return m;
+  }
+  return flujoMes(config, t);
+}
+
 export function resumenMes(config, movs, t) {
-  const plan = planMes(config, t);
+  const f = flujoMes(config, t);
   const delMes = movs.filter((m) => m.fecha && m.fecha.startsWith(t));
-  const fijoIds = new Set(config.fijos.map((f) => f.id));
   const gastos = delMes.filter((m) => m.tipo === 'gasto');
-  const gastosVar = gastos.filter((m) => !fijoIds.has(m.categoria));
-  const gastadoVar = suma(gastosVar);
+  const fijoIds = new Set(config.fijos.map((x) => x.id));
 
-  const porCat = new Map();
-  for (const m of gastosVar) porCat.set(m.categoria, (porCat.get(m.categoria) || 0) + Number(m.monto));
-
-  const fijos = plan.fijos.map((f) => {
-    const real = suma(gastos.filter((m) => m.categoria === f.id));
-    return { ...f, real, pagado: real > 0 };
+  const presupuestos = f.consumo.presupuestos.map((p) => {
+    const cats = new Set((config.presupuestos.find((x) => x.id === p.id) || { categorias: [] }).categorias.map((c) => c.id));
+    const gastado = suma(gastos.filter((m) => cats.has(m.categoria)));
+    return { ...p, gastado, restante: p.monto - gastado };
   });
-  // Fijos pagados este mes que el plan no esperaba (p. ej. un pago adelantado)
-  for (const f of config.fijos) {
-    if (fijos.some((x) => x.id === f.id)) continue;
-    const real = suma(gastos.filter((m) => m.categoria === f.id));
-    if (real > 0) fijos.push({ id: f.id, nombre: f.nombre, dia: f.dia, monto: 0, real, pagado: true });
+  // Gastos con categoría que ya no existe: cuentan en el primer presupuesto
+  const conocidas = new Set(categoriasVariables(config).map((c) => c.id));
+  const huerfanos = suma(gastos.filter((m) => !fijoIds.has(m.categoria) && !conocidas.has(m.categoria)));
+  if (huerfanos && presupuestos[0]) {
+    presupuestos[0].gastado += huerfanos;
+    presupuestos[0].restante -= huerfanos;
   }
 
-  const ingresosReg = delMes.filter((m) => m.tipo === 'ingreso');
-  const extras = suma(ingresosReg.filter((m) => m.categoria === 'i-extra'));
-  const ingresos = plan.ingresos + extras;
-  const compromisoFijos = fijos.reduce((a, f) => a + Math.max(f.monto, f.real), 0);
-  const restanteVar = plan.variable - gastadoVar;
+  const porCat = new Map();
+  for (const m of gastos.filter((x) => !fijoIds.has(x.categoria))) porCat.set(m.categoria, (porCat.get(m.categoria) || 0) + Number(m.monto));
+
+  const fijos = f.consumo.fijos.map((x) => {
+    const real = suma(gastos.filter((m) => m.categoria === x.id));
+    return { ...x, real, pagado: real > 0 };
+  });
 
   let diasRestantes = diasEnMes(t);
   if (t === ymActual()) diasRestantes = diasEnMes(t) - Number(hoyIso().slice(8, 10)) + 1;
   else if (t < ymActual()) diasRestantes = 0;
 
-  const ahorroEsperado = ingresos - compromisoFijos - Math.max(plan.variable, gastadoVar) - plan.totDeudas - plan.retiro;
-
-  return {
-    t, plan, movs: delMes, gastadoVar, porCat, fijos, extras, ingresos, ingresosReg,
-    compromisoFijos, restanteVar, diasRestantes,
-    porDia: diasRestantes > 0 ? restanteVar / diasRestantes : 0,
-    ahorroEsperado,
-    totalGastos: suma(gastos),
-  };
+  return { t, flujo: f, movs: delMes, presupuestos, fijos, porCat, diasRestantes, totalGastos: suma(gastos) };
 }
 
 export function saldoTarjeta(config, movs, tarjetaId) {
@@ -84,8 +86,8 @@ export function proximaFecha(dia) {
 }
 
 export function metasActuales(config) {
-  const s = saldosActuales(config);
-  return { ...s, ...reparto(s.general, config.metas) };
+  const a = arranque(config);
+  return { ...a, ...reparto(a.general, config.metas) };
 }
 
 export function registroHoy(movs) {
@@ -96,8 +98,19 @@ export function registroHoy(movs) {
 // Mes cuyo cierre conviene capturar: el anterior durante los primeros 10 días, si no el actual.
 export function mesDeCierreSugerido() {
   const t = ymActual();
-  const { y, m } = parseYm(t);
   const dia = Number(hoyIso().slice(8, 10));
-  if (dia <= 10) return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
-  return t;
+  return dia <= 10 ? addMonths(t, -1) : t;
 }
+
+// Pagos de débito y deudas de un mes que aún no se registran como pagados (sugerencia para el cierre).
+export function pendientesSugeridos(config, movs, t) {
+  const r = resumenMes(config, movs, t);
+  const out = r.fijos.filter((x) => x.pago !== 'tarjeta' && !x.pagado && x.monto > 0).map((x) => ({ nombre: `${x.nombre} de ${nombreMes(t, true)}`, monto: Math.round(x.monto) }));
+  for (const d of config.deudas.filter((x) => x.mes === t && !x.pagada)) {
+    const tj = config.tarjetas.find((x) => x.id === d.tarjeta);
+    out.push({ nombre: `${tj ? tj.nombre : 'Tarjeta'}: ${d.concepto}`, monto: d.monto });
+  }
+  return out;
+}
+
+export { saldosActuales };

@@ -1,7 +1,11 @@
-import { html, useState, useRef, useEffect, Tarjeta, Seg } from '../ui.js';
+import { html, useState, useRef, useEffect, Tarjeta, Seg, Hoja, Num, toast } from '../ui.js';
 import { proyectar, resumenAnual } from '../proyeccion.js';
 import { editarConfig } from '../store.js';
-import { dinero, dineroCorto, nombreMes, parseYm } from '../fechas.js';
+import { dinero, dineroCorto, nombreMes, parseYm, addMonths } from '../fechas.js';
+
+let mesElegido = null; // recuerda el mes abierto en "Mes por mes" al cambiar de pantalla
+const mesLargo = (t) => nombreMes(t, true);
+const soloMes = (t) => nombreMes(t, true).split(' ')[0];
 
 function Grafica({ meses, config }) {
   const [hover, setHover] = useState(null);
@@ -79,23 +83,149 @@ function Grafica({ meses, config }) {
   </div>`;
 }
 
-export function Plan({ config }) {
+// ---------- Una línea editable ----------
+function Linea({ item, signo, onEditar, sub }) {
+  return html`<li><button class="fila fila-btn linea" onClick=${() => onEditar(item)}>
+    <span class="fila-txt"><span class="fila-tit">${item.icono ? item.icono + ' ' : ''}${item.nombre}</span>${sub && html`<span class="fila-sub">${sub}</span>`}</span>
+    ${item.ajustado && html`<span class="pill" title=${'Plan: ' + dinero(item.plan)}>ajustado</span>`}
+    <span class=${'fila-monto ' + (signo === '+' ? 'pos' : '')}>${signo}${dinero(item.monto)}</span>
+    <span class="lapiz" aria-hidden="true">✎</span>
+  </button></li>`;
+}
+
+function EditarLinea({ t, item, onCerrar }) {
+  const [v, setV] = useState(Math.round(item.monto));
+  const guardar = () => {
+    editarConfig((c) => {
+      c.ajustes = c.ajustes || {};
+      c.ajustes[t] = { ...(c.ajustes[t] || {}), [item.id]: Number(v) || 0 };
+    });
+    toast(`${item.nombre} de ${soloMes(t)}: ${dinero(v)}`);
+    onCerrar();
+  };
+  const restablecer = () => {
+    editarConfig((c) => {
+      const a = { ...((c.ajustes || {})[t] || {}) };
+      delete a[item.id];
+      if (Object.keys(a).length) c.ajustes[t] = a;
+      else delete c.ajustes[t];
+    });
+    toast('Regresó al monto del plan');
+    onCerrar();
+  };
+  return html`<${Hoja} titulo=${`${item.nombre} · ${mesLargo(t)}`} onCerrar=${onCerrar}>
+    <div class="form">
+      <label class="campo"><span class="campo-etq">Monto para ${mesLargo(t)}</span>
+        <${Num} valor=${v} onCambio=${setV} /></label>
+      <p class="muted chico">Monto del plan: <strong>${dinero(item.plan)}</strong>. Este cambio aplica <strong>solo a ${mesLargo(t)}</strong>; los meses siguientes se recalculan solos. Para cambiarlo para siempre, ve a <strong>Más</strong>.</p>
+      <div class="acciones">
+        ${item.ajustado && html`<button class="btn" onClick=${restablecer}>Volver al plan</button>`}
+        <button class="btn btn-primario" onClick=${guardar}>Guardar</button>
+      </div>
+    </div>
+  <//>`;
+}
+
+// ---------- Mes por mes ----------
+function MesPorMes({ config, ir }) {
+  const proy = proyectar(config);
+  const meses = proy.meses;
+  const [t, setT] = useState(mesElegido && meses.some((m) => m.t === mesElegido) ? mesElegido : meses[0] && meses[0].t);
+  const [edit, setEdit] = useState(null);
+  const tira = useRef();
+  useEffect(() => {
+    mesElegido = t;
+    const el = tira.current && tira.current.querySelector('.activo');
+    if (el) el.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [t]);
+  if (!meses.length) return html`<p class="vacio">No hay meses por proyectar.</p>`;
+  const i = Math.max(0, meses.findIndex((m) => m.t === t));
+  const m = meses[i];
+  const quedan = m.saldoInicial + m.ingresos - m.salidasDebito - m.tarjetas.monto;
+  const ant = addMonths(m.t, -1);
+  const sigM = addMonths(m.t, 1);
+  const nAjustes = Object.keys((config.ajustes || {})[m.t] || {}).length;
+  const deudasTot = m.tarjetas.deudas.reduce((a, d) => a + d.monto, 0);
+  const esPrimero = i === 0;
+
+  return html`
+    <div class="tira" ref=${tira}>
+      ${meses.map((x) => html`<button class=${'tira-mes' + (x.t === m.t ? ' activo' : '') + (x.general < 0 ? ' neg' : '')} onClick=${() => setT(x.t)}>
+        <span>${nombreMes(x.t)}</span><strong>${dineroCorto(x.general)}</strong>
+      </button>`)}
+    </div>
+    <div class="nav-mes">
+      <button class="icono-btn" aria-label="Mes anterior" disabled=${i === 0} onClick=${() => setT(meses[i - 1].t)}>‹</button>
+      <h2>${mesLargo(m.t)}</h2>
+      <button class="icono-btn" aria-label="Mes siguiente" disabled=${i === meses.length - 1} onClick=${() => setT(meses[i + 1].t)}>›</button>
+    </div>
+
+    <${Tarjeta} titulo="Resumen del mes" clase="resumen-mes">
+      <ul class="lista lista-compacta">
+        <li class="fila"><span class="fila-txt">Arrancas con<span class="fila-sub">${esPrimero ? `Tus cuentas menos lo pendiente de ${soloMes(ant)}` : `Lo que te quedó de ${soloMes(ant)}`}</span></span><span class=${'fila-monto ' + (m.saldoInicial < 0 ? 'neg' : '')}>${dinero(m.saldoInicial)}</span></li>
+        <li class="fila"><span class="fila-txt">+ Entra</span><span class="fila-monto pos">+${dinero(m.ingresos)}</span></li>
+        <li class="fila"><span class="fila-txt">− Gastos del mes</span><span class="fila-monto">−${dinero(m.salidasDebito)}</span></li>
+        <li class="fila"><span class="fila-txt">− Pago de tarjetas</span><span class="fila-monto">−${dinero(m.tarjetas.monto)}</span></li>
+        <li class="fila fila-total"><span class="fila-txt">= Te queda</span><span class=${'fila-monto ' + (quedan < 0 ? 'neg' : '')}>${dinero(quedan)}</span></li>
+        <${Linea} item=${{ ...m.retiro }} signo="−" onEditar=${setEdit} sub=${config.ahorro.retiroPct + '% del sueldo, va a tu cuenta de retiro'} />
+        <li class="fila"><span class="fila-txt fila-sub">+ Rendimientos estimados (${proy.esc.rendimiento}% anual)</span><span class="fila-monto fila-sub">+${dinero(m.rendimiento)}</span></li>
+        <li class="fila fila-total"><span class="fila-txt">Ahorro al cierre</span><span class=${'fila-monto ' + (m.general < 0 ? 'neg' : 'pos')}>${dinero(m.general)}</span></li>
+      </ul>
+      ${m.general < 0 && html`<p class="nota-alerta">⚠️ Este mes terminas en negativo. Ajusta algún monto (por ejemplo, el pago de tarjetas o el ocio) o mueve un pago a un mes con bono.</p>`}
+      ${nAjustes > 0 && html`<p class="muted chico">Este mes tiene ${nAjustes} ${nAjustes === 1 ? 'monto ajustado' : 'montos ajustados'} a mano (marcados como “ajustado”).</p>`}
+      <p class="muted chico">Toca cualquier monto con ✎ para cambiarlo solo en este mes.</p>
+    <//>
+
+    <${Tarjeta} titulo="Entra">
+      <ul class="lista lista-compacta">
+        <${Linea} item=${m.sueldo} signo="+" onEditar=${setEdit} />
+        ${m.bonos.map((b) => html`<${Linea} item=${{ ...b, icono: '🎁' }} signo="+" onEditar=${setEdit} />`)}
+      </ul>
+    <//>
+
+    <${Tarjeta} titulo="Gastos del mes" accion=${html`<span class="muted chico">salen de tu cuenta</span>`}>
+      <ul class="lista lista-compacta">
+        ${m.consumo.debito.map((x) => html`<${Linea} item=${x} signo="−" onEditar=${setEdit} sub=${x.esPresupuesto ? 'Presupuesto' : null} />`)}
+      </ul>
+    <//>
+
+    <${Tarjeta} titulo="Pago de tarjetas" accion=${html`<button class="enlace" onClick=${() => ir('tarjetas')}>Deudas</button>`}>
+      <ul class="lista lista-compacta">
+        ${m.tarjetas.deudas.map((d) => {
+          const tj = config.tarjetas.find((x) => x.id === d.tarjeta);
+          return html`<li class="fila"><span class="fila-txt fila-sub">💳 ${tj ? tj.nombre : 'Tarjeta'}: ${d.concepto}</span><span class="fila-monto fila-sub">${dinero(d.monto)}</span></li>`;
+        })}
+        ${m.tarjetas.consumoPrevio > 0 && html`<li class="fila"><span class="fila-txt fila-sub">🧾 Lo que consumiste con tarjeta en ${soloMes(ant)}</span><span class="fila-monto fila-sub">${dinero(m.tarjetas.consumoPrevio)}</span></li>`}
+        <${Linea} item=${{ ...m.tarjetas, nombre: 'Total a pagar' }} signo="−" onEditar=${setEdit}
+          sub=${m.tarjetas.ajustado ? `Calculado: deudas ${dinero(deudasTot)} + consumo ${dinero(m.tarjetas.consumoPrevio)}` : null} />
+      </ul>
+    <//>
+
+    <${Tarjeta} titulo=${'Con tarjeta en ' + soloMes(m.t)} accion=${html`<span class="muted chico">lo pagas en ${soloMes(sigM)}</span>`}>
+      <ul class="lista lista-compacta">
+        ${m.consumo.tarjeta.map((x) => html`<${Linea} item=${x} signo="" onEditar=${setEdit} sub=${x.esPresupuesto ? 'Presupuesto' : null} />`)}
+        <li class="fila fila-total"><span class="fila-txt">Pagarás en ${soloMes(sigM)}</span><span class="fila-monto">${dinero(m.consumoTarjeta)}</span></li>
+      </ul>
+    <//>
+
+    ${edit && html`<${EditarLinea} t=${m.t} item=${edit} onCerrar=${() => setEdit(null)} />`}
+  `;
+}
+
+// ---------- Siete años ----------
+function SieteAnios({ config, ir }) {
   const [abierto, setAbierto] = useState(null);
-  const [mesAbierto, setMesAbierto] = useState(null);
   const proy = proyectar(config);
   const anual = resumenAnual(proy.meses);
   const fin = proy.meses[proy.meses.length - 1];
   const esc = proy.esc;
-
-  // Comparación rápida entre escenarios
   const comp = Object.entries(config.escenarios).map(([k, e]) => {
     const p = proyectar(config, e);
     const u = p.meses[p.meses.length - 1];
     return { k, nombre: e.nombre, enganche: p.hitos.enganche, final: u ? u.general : 0 };
   });
 
-  return html`<div class="pantalla">
-    <h2 class="titulo-pant">Proyección a ${nombreMes(config.horizonte, true)}</h2>
+  return html`
     <${Seg} etiqueta="Escenario" valor=${config.escenario} onCambio=${(v) => editarConfig((c) => { c.escenario = v; })}
       opciones=${Object.entries(config.escenarios).map(([k, e]) => ({ valor: k, texto: e.nombre }))} />
     <p class="supuestos">Sueldo +${esc.aumento}% al año · inflación ${esc.inflacion}% · rendimiento ${esc.rendimiento}% · doctorado +${esc.doctorado}% al año</p>
@@ -105,16 +235,16 @@ export function Plan({ config }) {
     </label>
 
     <div class="hitos">
-      <div class="hito"><span class="hito-ico">🛟</span><span class="muted">Fondo de emergencia</span><strong>${proy.hitos.fondo ? nombreMes(proy.hitos.fondo, true) : 'No se alcanza'}</strong></div>
-      <div class="hito"><span class="hito-ico">🏡</span><span class="muted">Enganche de ${dineroCorto(config.metas.enganche)}</span><strong>${proy.hitos.enganche ? nombreMes(proy.hitos.enganche, true) : 'No se alcanza'}</strong></div>
+      <div class="hito"><span class="hito-ico">🛟</span><span class="muted">Fondo de emergencia</span><strong>${proy.hitos.fondo ? mesLargo(proy.hitos.fondo) : 'No se alcanza'}</strong></div>
+      <div class="hito"><span class="hito-ico">🏡</span><span class="muted">Enganche de ${dineroCorto(config.metas.enganche)}</span><strong>${proy.hitos.enganche ? mesLargo(proy.hitos.enganche) : 'No se alcanza'}</strong></div>
       <div class="hito"><span class="hito-ico">💰</span><span class="muted">Ahorro en ${config.horizonte.slice(0, 4)}</span><strong>${dinero(fin ? fin.general : 0)}</strong></div>
       <div class="hito"><span class="hito-ico">🧓</span><span class="muted">Retiro en ${config.horizonte.slice(0, 4)}</span><strong>${dinero(fin ? fin.retiroSaldo : 0)}</strong></div>
     </div>
 
     ${proy.hitos.negativos.length > 0 &&
     html`<div class="aviso aviso-critico">
-      <span>⚠️ <strong>Saldo negativo de ${nombreMes(proy.hitos.negativos[0], true)} a ${nombreMes(proy.hitos.negativos[proy.hitos.negativos.length - 1], true)}.</strong>
-      Lo más bajo: ${dinero(proy.hitos.minimo.saldo)} en ${nombreMes(proy.hitos.minimo.t, true)}. Para esos meses tendrías que recortar gastos o mover pagos de tarjeta a meses con bono.</span>
+      <span>⚠️ <strong>Saldo negativo en ${proy.hitos.negativos.length} ${proy.hitos.negativos.length === 1 ? 'mes' : 'meses'}</strong>, el primero ${mesLargo(proy.hitos.negativos[0])}. Lo más bajo: ${dinero(proy.hitos.minimo.saldo)} en ${mesLargo(proy.hitos.minimo.t)}.</span>
+      <button class="btn btn-chico" onClick=${() => { mesElegido = proy.hitos.negativos[0]; ir('meses'); }}>Ver</button>
     </div>`}
 
     <${Tarjeta} titulo="Ahorro proyectado">
@@ -125,49 +255,46 @@ export function Plan({ config }) {
     <${Tarjeta} titulo="Comparar escenarios">
       <table class="tabla">
         <thead><tr><th>Escenario</th><th>Enganche listo</th><th>Ahorro ${config.horizonte.slice(0, 4)}</th></tr></thead>
-        <tbody>${comp.map((c) => html`<tr class=${c.k === config.escenario ? 'sel' : ''}><td>${c.nombre}</td><td>${c.enganche ? nombreMes(c.enganche, true) : '—'}</td><td class="num">${dineroCorto(c.final)}</td></tr>`)}</tbody>
+        <tbody>${comp.map((c) => html`<tr class=${c.k === config.escenario ? 'sel' : ''}><td>${c.nombre}</td><td>${c.enganche ? mesLargo(c.enganche) : '—'}</td><td class="num">${dineroCorto(c.final)}</td></tr>`)}</tbody>
       </table>
     <//>
 
     <${Tarjeta} titulo="Año por año">
-      <p class="muted chico">Toca un año para ver sus meses, y un mes para ver su desglose.</p>
+      <p class="muted chico">Toca un año para ver sus meses, y un mes para abrirlo en “Mes por mes”.</p>
       <div class="tabla-scroll">
         <table class="tabla">
-          <thead><tr><th>Año</th><th>Ingresos</th><th>Gastos</th><th>Ahorro neto</th><th>Saldo</th></tr></thead>
+          <thead><tr><th>Año</th><th>Entra</th><th>Sale</th><th>Ahorro neto</th><th>Saldo</th></tr></thead>
           <tbody>
             ${anual.map((a) => html`
               <tr class="clic" onClick=${() => setAbierto(abierto === a.anio ? null : a.anio)}>
                 <td><strong>${abierto === a.anio ? '▾' : '▸'} ${a.anio}</strong></td>
                 <td class="num">${dineroCorto(a.ingresos)}</td>
-                <td class="num">${dineroCorto(a.gastos + a.deudas)}</td>
+                <td class="num">${dineroCorto(a.salidas)}</td>
                 <td class=${'num ' + (a.flujo < 0 ? 'neg' : '')}>${dineroCorto(a.flujo)}</td>
                 <td class=${'num ' + (a.general < 0 ? 'neg' : '')}>${dineroCorto(a.general)}</td>
               </tr>
-              ${abierto === a.anio && proy.meses.filter((m) => m.t.startsWith(a.anio)).map((m) => html`<tr class="sub-fila clic" onClick=${() => setMesAbierto(mesAbierto === m.t ? null : m.t)}>
+              ${abierto === a.anio && proy.meses.filter((m) => m.t.startsWith(a.anio)).map((m) => html`<tr class="sub-fila clic" onClick=${() => { mesElegido = m.t; ir('meses'); }}>
                 <td>${nombreMes(m.t)}</td>
                 <td class="num">${dineroCorto(m.ingresos)}${m.totBonos ? ' 🎁' : ''}</td>
-                <td class="num">${dineroCorto(m.gastos + m.deudasPendientes)}${m.deudasPendientes ? ' 💳' : ''}</td>
+                <td class="num">${dineroCorto(m.salidasDebito + m.tarjetas.monto)}</td>
                 <td class=${'num ' + (m.flujo < 0 ? 'neg' : '')}>${dineroCorto(m.flujo)}</td>
                 <td class=${'num ' + (m.general < 0 ? 'neg' : '')}>${dineroCorto(m.general)}</td>
-              </tr>
-              ${mesAbierto === m.t && html`<tr class="detalle-fila"><td colspan="5">${detalle(m).map((d) => html`<div class="det"><span>${d[0]}</span><span class="num">${d[1]}</span></div>`)}</td></tr>`}`)}
+              </tr>`)}
             `)}
           </tbody>
         </table>
       </div>
-      <p class="muted chico">🎁 mes con bono · 💳 mes con pago de deudas. El ahorro neto ya descuenta tu aportación al retiro.</p>
+      <p class="muted chico">🎁 mes con bono. El ahorro neto ya descuenta tu aportación al retiro.</p>
     <//>
-  </div>`;
+  `;
 }
 
-function detalle(m) {
-  const partes = [['Sueldo', dinero(m.sueldo)]];
-  for (const b of m.bonos) partes.push([b.nombre, dinero(b.monto)]);
-  for (const f of m.fijos) partes.push([f.nombre, '−' + dinero(f.monto)]);
-  partes.push(['Ocio', '−' + dinero(m.variable)]);
-  if (m.deudasPendientes) partes.push(['Liquidar tarjetas', '−' + dinero(m.deudasPendientes)]);
-  partes.push(['Ahorro para retiro', '−' + dinero(m.retiro)]);
-  if (m.rendimiento) partes.push(['Rendimientos', '+' + dinero(m.rendimiento)]);
-  partes.push(['Saldo al cierre', dinero(m.general)]);
-  return partes;
+export function Plan({ config, ir, ruta }) {
+  const modo = ruta === 'meses' ? 'meses' : 'plan';
+  return html`<div class="pantalla">
+    <h2 class="titulo-pant">Plan</h2>
+    <${Seg} etiqueta="Vista" valor=${modo} onCambio=${(v) => ir(v)}
+      opciones=${[{ valor: 'meses', texto: 'Mes por mes' }, { valor: 'plan', texto: `A ${config.horizonte.slice(0, 4)}` }]} />
+    ${modo === 'meses' ? html`<${MesPorMes} config=${config} ir=${ir} />` : html`<${SieteAnios} config=${config} ir=${ir} />`}
+  </div>`;
 }

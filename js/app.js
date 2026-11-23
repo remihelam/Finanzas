@@ -11,7 +11,7 @@ import { Registrar, EditarMov } from './pantallas/registrar.js';
 import { Mas, Tarjetas, Ahorro, Sueldo, Fijos, Ocio, Escenarios, Recordatorios, Cuenta, Respaldo, textoSync } from './pantallas/ajustes.js';
 
 const leerRuta = () => (location.hash || '#inicio').slice(1);
-const SECCION = { inicio: 'inicio', movs: 'movs', plan: 'plan' };
+const SECCION = { inicio: 'inicio', movs: 'movs', plan: 'plan', meses: 'plan' };
 
 function Bienvenida() {
   const importar = (e) => {
@@ -73,12 +73,12 @@ function App() {
   const movs = movimientos();
   const ir = (r) => (location.hash = '#' + r);
   const abrirRegistro = (prellenado) => setRegistro(prellenado || {});
-  const props = { config, movs, ir, abrirRegistro, editar: setEditando };
-  const pantallas = { inicio: Inicio, movs: Movimientos, plan: Plan, mas: Mas, tarjetas: Tarjetas, ahorro: Ahorro, sueldo: Sueldo, fijos: Fijos, ocio: Ocio, escenarios: Escenarios, recordatorios: Recordatorios, cuenta: Cuenta, respaldo: Respaldo };
+  const props = { config, movs, ir, ruta, abrirRegistro, editar: setEditando };
+  const pantallas = { inicio: Inicio, movs: Movimientos, plan: Plan, meses: Plan, mas: Mas, tarjetas: Tarjetas, ahorro: Ahorro, sueldo: Sueldo, fijos: Fijos, ocio: Ocio, escenarios: Escenarios, recordatorios: Recordatorios, cuenta: Cuenta, respaldo: Respaldo };
   const P = pantallas[ruta] || Inicio;
   const seccion = SECCION[ruta] || (pantallas[ruta] ? 'mas' : 'inicio');
 
-  const tab = (id, ico, txt) => html`<a href=${'#' + id} class=${'tab' + (seccion === id ? ' activo' : '')} aria-current=${seccion === id ? 'page' : undefined}><span class="tab-ico">${ico}</span><span>${txt}</span></a>`;
+  const tab = (id, ico, txt) => html`<a href=${'#' + id} class=${'tab' + (seccion === (SECCION[id] || id) ? ' activo' : '')} aria-current=${seccion === (SECCION[id] || id) ? 'page' : undefined}><span class="tab-ico">${ico}</span><span>${txt}</span></a>`;
 
   return html`<div class="app">
     <header class="cabecera">
@@ -90,7 +90,7 @@ function App() {
       ${tab('inicio', '🏠', 'Inicio')}
       ${tab('movs', '🧾', 'Movimientos')}
       <button class="tab-mas" aria-label="Registrar movimiento" onClick=${() => abrirRegistro()}>+</button>
-      ${tab('plan', '📈', 'Plan')}
+      ${tab('meses', '📈', 'Plan')}
       ${tab('mas', '⚙️', 'Más')}
     </nav>
     ${registro && html`<${Registrar} config=${config} prellenado=${registro.categoria ? registro : null} onCerrar=${() => setRegistro(null)} />`}

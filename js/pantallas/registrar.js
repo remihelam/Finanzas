@@ -36,7 +36,7 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
   };
 
   const cat = catalogo(config);
-  const variables = config.variable.categorias;
+  const variables = config.presupuestos.flatMap((p) => p.categorias);
   const fijos = config.fijos;
   const ingresos = [...cat.values()].filter((c) => c.grupo === 'ingreso');
 

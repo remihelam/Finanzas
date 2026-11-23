@@ -127,11 +127,24 @@ function EditarLinea({ t, item, onCerrar }) {
 }
 
 // ---------- Mes por mes ----------
+// Un renglón del resumen que se abre para mostrar (y editar) su detalle.
+function Grupo({ etiqueta, signo, monto, abierto, onToggle, children, clase }) {
+  return html`<li class=${'grupo ' + (clase || '')}>
+    <button class="fila fila-btn grupo-cab" aria-expanded=${abierto} onClick=${onToggle}>
+      <span class="fila-txt">${etiqueta}</span>
+      <span class="fila-monto">${signo}${dinero(monto)}</span>
+      <span class=${'chev-g' + (abierto ? ' abierto' : '')} aria-hidden="true"></span>
+    </button>
+    ${abierto && html`<ul class="detalle">${children}</ul>`}
+  </li>`;
+}
+
 function MesPorMes({ config, ir }) {
   const proy = proyectar(config);
   const meses = proy.meses;
   const [t, setT] = useState(mesElegido && meses.some((m) => m.t === mesElegido) ? mesElegido : meses[0] && meses[0].t);
   const [edit, setEdit] = useState(null);
+  const [abiertos, setAbiertos] = useState({ cargos: true });
   const tira = useRef();
   useEffect(() => {
     mesElegido = t;
@@ -141,11 +154,10 @@ function MesPorMes({ config, ir }) {
   if (!meses.length) return html`<p class="vacio">No hay meses por proyectar.</p>`;
   const i = Math.max(0, meses.findIndex((m) => m.t === t));
   const m = meses[i];
-  const quedan = m.saldoInicial + m.ingresos - m.salidasDebito - m.tarjetas.monto;
   const ant = addMonths(m.t, -1);
   const sigM = addMonths(m.t, 1);
   const nAjustes = Object.keys((config.ajustes || {})[m.t] || {}).length;
-  const deudasTot = m.tarjetas.deudas.reduce((a, d) => a + d.monto, 0);
+  const toggle = (k) => setAbiertos({ ...abiertos, [k]: !abiertos[k] });
   const esPrimero = i === 0;
 
   return html`
@@ -160,53 +172,45 @@ function MesPorMes({ config, ir }) {
       <button class="icono-btn" aria-label="Mes siguiente" disabled=${i === meses.length - 1} onClick=${() => setT(meses[i + 1].t)}>›</button>
     </div>
 
-    <${Tarjeta} titulo="Resumen del mes" clase="resumen-mes">
-      <ul class="lista lista-compacta">
-        <li class="fila"><span class="fila-txt">Arrancas con<span class="fila-sub">${esPrimero ? `Tus cuentas menos lo pendiente de ${soloMes(ant)}` : `Lo que te quedó de ${soloMes(ant)}`}</span></span><span class=${'fila-monto ' + (m.saldoInicial < 0 ? 'neg' : '')}>${dinero(m.saldoInicial)}</span></li>
-        <li class="fila"><span class="fila-txt">+ Entra</span><span class="fila-monto pos">+${dinero(m.ingresos)}</span></li>
-        <li class="fila"><span class="fila-txt">− Gastos del mes</span><span class="fila-monto">−${dinero(m.salidasDebito)}</span></li>
-        <li class="fila"><span class="fila-txt">− Pago de tarjetas</span><span class="fila-monto">−${dinero(m.tarjetas.monto)}</span></li>
-        <li class="fila fila-total"><span class="fila-txt">= Te queda</span><span class=${'fila-monto ' + (quedan < 0 ? 'neg' : '')}>${dinero(quedan)}</span></li>
-        <${Linea} item=${{ ...m.retiro }} signo="−" onEditar=${setEdit} sub=${config.ahorro.retiroPct + '% del sueldo, va a tu cuenta de retiro'} />
-        <li class="fila"><span class="fila-txt fila-sub">+ Rendimientos estimados (${proy.esc.rendimiento}% anual)</span><span class="fila-monto fila-sub">+${dinero(m.rendimiento)}</span></li>
-        <li class="fila fila-total"><span class="fila-txt">Ahorro al cierre</span><span class=${'fila-monto ' + (m.general < 0 ? 'neg' : 'pos')}>${dinero(m.general)}</span></li>
+    <section class="tarjeta resumen-mes">
+      <ul class="lista">
+        <li class="fila"><span class="fila-txt">Arrancas con<span class="fila-sub">${esPrimero ? `Tus cuentas menos lo pendiente de ${soloMes(ant)}` : `Lo que te quedó de ${soloMes(ant)}`}</span></span><span class=${'fila-monto ' + (m.saldoInicial < 0 ? 'neg' : '')}>${dinero(m.saldoInicial)}</span><span class="chev-vacio"></span></li>
+        <${Grupo} etiqueta="Entra" signo="+" monto=${m.ingresos} abierto=${abiertos.entra} onToggle=${() => toggle('entra')} clase="pos">
+          <${Linea} item=${m.sueldo} signo="+" onEditar=${setEdit} />
+          ${m.bonos.map((b) => html`<${Linea} item=${b} signo="+" onEditar=${setEdit} />`)}
+        <//>
+        <${Grupo} etiqueta="Sale de tu cuenta" signo="−" monto=${m.salidasDebito} abierto=${abiertos.cuenta} onToggle=${() => toggle('cuenta')}>
+          ${m.consumo.debito.map((x) => html`<${Linea} item=${x} signo="−" onEditar=${setEdit} />`)}
+        <//>
+        <${Grupo} etiqueta="Pagas de tarjetas" signo="−" monto=${m.tarjetas.monto} abierto=${abiertos.tarjetas} onToggle=${() => toggle('tarjetas')}>
+          ${m.tarjetas.porTarjeta.map((g) => html`<li class="sub-grupo">
+            <div class="fila"><span class="fila-txt"><strong>💳 ${g.nombre}</strong>${g.dia ? html`<span class="fila-sub">día ${g.dia}</span>` : ''}</span><span class="fila-monto">${dinero(g.total)}</span></div>
+            ${g.deudas.length + g.consumo.length > 1 && g.deudas.map((d) => html`<div class="fila fila-sub"><span class="fila-txt">${d.concepto}</span><span>${dinero(d.monto)}</span></div>`)}
+            ${g.deudas.length + g.consumo.length > 1 && g.consumo.map((c) => html`<div class="fila fila-sub"><span class="fila-txt">${c.nombre} (de ${soloMes(ant)})</span><span>${dinero(c.monto)}</span></div>`)}
+            ${g.deudas.length + g.consumo.length === 1 && html`<div class="fila fila-sub"><span class="fila-txt">${g.deudas[0] ? g.deudas[0].concepto : `${g.consumo[0].nombre} (de ${soloMes(ant)})`}</span></div>`}
+          </li>`)}
+          <${Linea} item=${{ ...m.tarjetas, nombre: 'Total a pagar' }} signo="−" onEditar=${setEdit} sub=${m.tarjetas.ajustado ? `Calculado: ${dinero(m.tarjetas.plan)}` : 'Toca para ajustarlo a tus estados de cuenta'} />
+        <//>
+        <li class="fila fila-total"><span class="fila-txt">Te queda</span><span class=${'fila-monto grande ' + (m.saldoInicial + m.queda < 0 ? 'neg' : '')}>${dinero(m.saldoInicial + m.queda)}</span><span class="chev-vacio"></span></li>
+        <${Linea} item=${m.retiro} signo="−" onEditar=${setEdit} sub=${config.ahorro.retiroPct + '% del sueldo, a tu cuenta de retiro'} />
+        <li class="fila"><span class="fila-txt fila-sub">Rendimientos estimados (${proy.esc.rendimiento}% anual)</span><span class="fila-monto fila-sub">+${dinero(m.rendimiento)}</span><span class="chev-vacio"></span></li>
+        <li class="fila fila-total"><span class="fila-txt">Ahorro al cierre</span><span class=${'fila-monto grande ' + (m.general < 0 ? 'neg' : 'pos')}>${dinero(m.general)}</span><span class="chev-vacio"></span></li>
       </ul>
-      ${m.general < 0 && html`<p class="nota-alerta">⚠️ Este mes terminas en negativo. Ajusta algún monto (por ejemplo, el pago de tarjetas o el ocio) o mueve un pago a un mes con bono.</p>`}
-      ${nAjustes > 0 && html`<p class="muted chico">Este mes tiene ${nAjustes} ${nAjustes === 1 ? 'monto ajustado' : 'montos ajustados'} a mano (marcados como “ajustado”).</p>`}
-      <p class="muted chico">Toca cualquier monto con ✎ para cambiarlo solo en este mes.</p>
-    <//>
+      ${m.general < 0 && html`<p class="nota-alerta">⚠️ Terminas ${soloMes(m.t)} en negativo. Prueba bajar el ocio o el retiro de este mes, o mover un pago a un mes con bono.</p>`}
+      ${nAjustes > 0 && html`<p class="muted chico">${nAjustes} ${nAjustes === 1 ? 'monto ajustado' : 'montos ajustados'} a mano este mes.</p>`}
+    </section>
 
-    <${Tarjeta} titulo="Entra">
-      <ul class="lista lista-compacta">
-        <${Linea} item=${m.sueldo} signo="+" onEditar=${setEdit} />
-        ${m.bonos.map((b) => html`<${Linea} item=${{ ...b, icono: '🎁' }} signo="+" onEditar=${setEdit} />`)}
+    <section class="tarjeta">
+      <ul class="lista">
+        <${Grupo} etiqueta=${html`Cargas a tarjeta en ${soloMes(m.t)}<span class="fila-sub">Lo pagas en ${soloMes(sigM)}</span>`} signo="" monto=${m.consumoTarjeta} abierto=${abiertos.cargos} onToggle=${() => toggle('cargos')}>
+          ${m.consumo.tarjeta.map((x) => {
+            const tj = config.tarjetas.find((k) => k.id === x.tarjeta);
+            return html`<${Linea} item=${x} signo="" onEditar=${setEdit} sub=${(x.esPresupuesto ? 'Presupuesto · ' : '') + (tj ? tj.nombre : 'Tarjeta sin elegir')} />`;
+          })}
+        <//>
       </ul>
-    <//>
-
-    <${Tarjeta} titulo="Gastos del mes" accion=${html`<span class="muted chico">salen de tu cuenta</span>`}>
-      <ul class="lista lista-compacta">
-        ${m.consumo.debito.map((x) => html`<${Linea} item=${x} signo="−" onEditar=${setEdit} sub=${x.esPresupuesto ? 'Presupuesto' : null} />`)}
-      </ul>
-    <//>
-
-    <${Tarjeta} titulo="Pago de tarjetas" accion=${html`<button class="enlace" onClick=${() => ir('tarjetas')}>Deudas</button>`}>
-      <ul class="lista lista-compacta">
-        ${m.tarjetas.deudas.map((d) => {
-          const tj = config.tarjetas.find((x) => x.id === d.tarjeta);
-          return html`<li class="fila"><span class="fila-txt fila-sub">💳 ${tj ? tj.nombre : 'Tarjeta'}: ${d.concepto}</span><span class="fila-monto fila-sub">${dinero(d.monto)}</span></li>`;
-        })}
-        ${m.tarjetas.consumoPrevio > 0 && html`<li class="fila"><span class="fila-txt fila-sub">🧾 Lo que consumiste con tarjeta en ${soloMes(ant)}</span><span class="fila-monto fila-sub">${dinero(m.tarjetas.consumoPrevio)}</span></li>`}
-        <${Linea} item=${{ ...m.tarjetas, nombre: 'Total a pagar' }} signo="−" onEditar=${setEdit}
-          sub=${m.tarjetas.ajustado ? `Calculado: deudas ${dinero(deudasTot)} + consumo ${dinero(m.tarjetas.consumoPrevio)}` : null} />
-      </ul>
-    <//>
-
-    <${Tarjeta} titulo=${'Con tarjeta en ' + soloMes(m.t)} accion=${html`<span class="muted chico">lo pagas en ${soloMes(sigM)}</span>`}>
-      <ul class="lista lista-compacta">
-        ${m.consumo.tarjeta.map((x) => html`<${Linea} item=${x} signo="" onEditar=${setEdit} sub=${x.esPresupuesto ? 'Presupuesto' : null} />`)}
-        <li class="fila fila-total"><span class="fila-txt">Pagarás en ${soloMes(sigM)}</span><span class="fila-monto">${dinero(m.consumoTarjeta)}</span></li>
-      </ul>
-    <//>
+    </section>
+    <p class="muted chico">Toca un monto con ✎ para cambiarlo solo en ${mesLargo(m.t)}; los meses siguientes se recalculan solos.</p>
 
     ${edit && html`<${EditarLinea} t=${m.t} item=${edit} onCerrar=${() => setEdit(null)} />`}
   `;

@@ -55,9 +55,19 @@ export function montoFijo(f, t, esc) {
   }
 }
 
+// Monto del presupuesto en `t`: el último "cambio programado" vigente (o el monto base),
+// ajustado con la inflación cada enero si así se configuró.
 function presupuestoPlan(p, t, esc) {
-  if (!p.crece || !p.base || t < p.base) return p.monto;
-  return p.monto * Math.pow(1 + pct(esc.inflacion), vecesMes(p.base, t, 1));
+  let monto = p.monto;
+  let base = p.base;
+  for (const c of (p.cambios || []).slice().sort((a, b) => (a.desde < b.desde ? -1 : 1))) {
+    if (c.desde <= t) {
+      monto = c.monto;
+      base = c.desde;
+    }
+  }
+  if (!p.crece || !base || t < base) return monto;
+  return monto * Math.pow(1 + pct(esc.inflacion), vecesMes(base, t, 1));
 }
 
 // Lo que consumes en el mes `t` (fijos + presupuestos), separado por cómo se paga.
@@ -67,12 +77,12 @@ function consumoMes(config, esc, t) {
   const fijos = config.fijos
     .map((f) => {
       const plan = montoFijo(f, t, esc);
-      return { id: f.id, nombre: f.nombre, icono: f.icono, dia: f.dia, pago: f.pago || 'debito', plan, monto: val(f.id, plan), ajustado: aj[f.id] != null };
+      return { id: f.id, nombre: f.nombre, icono: f.icono, dia: f.dia, pago: f.pago || 'debito', tarjeta: f.pago === 'tarjeta' ? f.tarjeta || null : null, plan, monto: val(f.id, plan), ajustado: aj[f.id] != null };
     })
     .filter((x) => x.plan > 0 || x.ajustado);
   const presupuestos = config.presupuestos.map((p) => {
     const plan = presupuestoPlan(p, t, esc);
-    return { id: p.id, nombre: p.nombre, pago: p.pago || 'debito', plan, monto: val(p.id, plan), ajustado: aj[p.id] != null, esPresupuesto: true };
+    return { id: p.id, nombre: p.nombre, icono: p.icono, pago: p.pago || 'debito', tarjeta: p.pago === 'tarjeta' ? p.tarjeta || null : null, plan, monto: val(p.id, plan), ajustado: aj[p.id] != null, esPresupuesto: true };
   });
   const todos = [...fijos, ...presupuestos];
   return {
@@ -83,26 +93,52 @@ function consumoMes(config, esc, t) {
   };
 }
 
+// Agrupa lo que se paga de tarjetas en un mes, tarjeta por tarjeta.
+function agruparPorTarjeta(config, deudas, previo) {
+  const grupos = new Map();
+  const grupo = (id) => {
+    if (!grupos.has(id)) {
+      const tj = config.tarjetas.find((x) => x.id === id);
+      grupos.set(id, { id, nombre: tj ? tj.nombre : 'Sin tarjeta asignada', dia: tj ? tj.pago : null, deudas: [], consumo: [], total: 0 });
+    }
+    return grupos.get(id);
+  };
+  for (const d of deudas) {
+    const g = grupo(d.tarjeta || null);
+    g.deudas.push(d);
+    g.total += d.monto;
+  }
+  for (const c of previo) {
+    if (!c.monto) continue;
+    const g = grupo(c.tarjeta || null);
+    g.consumo.push(c);
+    g.total += c.monto;
+  }
+  return [...grupos.values()].sort((a, b) => (a.dia || 99) - (b.dia || 99));
+}
+
 // Flujo completo de un mes.
-// `consumoPrevio`: lo consumido con tarjeta el mes anterior (se paga este mes).
-export function flujoMes(config, t, { esc, consumoPrevio } = {}) {
+// `previo`: lo consumido con tarjeta el mes anterior (se paga este mes), como lista de conceptos.
+export function flujoMes(config, t, { esc, previo } = {}) {
   esc = esc || escenarioActivo(config);
   const aj = (config.ajustes || {})[t] || {};
   const val = (id, plan) => (aj[id] != null ? aj[id] : plan);
 
   const sPlan = sueldoPlan(config, esc, t);
-  const sueldo = { id: 'sueldo', nombre: 'Sueldo', plan: sPlan, monto: val('sueldo', sPlan), ajustado: aj.sueldo != null };
-  const bonos = bonosPlan(config, esc, t).map((b) => ({ ...b, monto: val(b.id, b.plan), ajustado: aj[b.id] != null }));
+  const sueldo = { id: 'sueldo', nombre: 'Sueldo', icono: '💼', plan: sPlan, monto: val('sueldo', sPlan), ajustado: aj.sueldo != null };
+  const bonos = bonosPlan(config, esc, t).map((b) => ({ ...b, icono: '🎁', monto: val(b.id, b.plan), ajustado: aj[b.id] != null }));
   const ingresos = sueldo.monto + suma(bonos);
 
   const consumo = consumoMes(config, esc, t);
-  if (consumoPrevio == null) consumoPrevio = suma(consumoMes(config, esc, addMonths(t, -1)).tarjeta);
+  if (previo == null) previo = consumoMes(config, esc, addMonths(t, -1)).tarjeta;
+  const consumoPrevio = suma(previo);
   const deudas = config.deudas.filter((d) => d.mes === t);
   const tPlan = suma(deudas) + consumoPrevio;
-  const tarjetas = { id: 'tarjetas', nombre: 'Pago de tarjetas', plan: tPlan, monto: val('tarjetas', tPlan), ajustado: aj.tarjetas != null, deudas, consumoPrevio };
+  const porTarjeta = agruparPorTarjeta(config, deudas, previo);
+  const tarjetas = { id: 'tarjetas', nombre: 'Pago de tarjetas', plan: tPlan, monto: val('tarjetas', tPlan), ajustado: aj.tarjetas != null, deudas, consumoPrevio, previo, porTarjeta };
 
   const rPlan = sueldo.monto * pct(config.ahorro.retiroPct);
-  const retiro = { id: 'retiro', nombre: 'Apartar para retiro', plan: rPlan, monto: val('retiro', rPlan), ajustado: aj.retiro != null };
+  const retiro = { id: 'retiro', nombre: 'Apartar para retiro', icono: '🧓', plan: rPlan, monto: val('retiro', rPlan), ajustado: aj.retiro != null };
 
   const salidasDebito = suma(consumo.debito);
   const flujo = ingresos - salidasDebito - tarjetas.monto - retiro.monto;
@@ -111,6 +147,7 @@ export function flujoMes(config, t, { esc, consumoPrevio } = {}) {
     consumo, salidasDebito, tarjetas, retiro,
     consumoTarjeta: suma(consumo.tarjeta), // se paga el mes siguiente
     totBonos: suma(bonos),
+    queda: ingresos - salidasDebito - tarjetas.monto, // antes de retiro y rendimientos
     flujo,
   };
 }
@@ -145,7 +182,8 @@ export function proyectar(config, escOverride) {
   const a = arranque(config);
   let general = a.general;
   let retiro = a.retiro;
-  let consumoPrevio = config.ahorro.tarjetasPorPagar || 0;
+  const porPagar = config.ahorro.tarjetasPorPagar || 0;
+  let previo = porPagar ? [{ id: 'cierre', nombre: "Compras con tarjeta del mes de cierre", tarjeta: null, monto: porPagar }] : [];
   const meses = [];
   const hitos = { fondo: null, enganche: null, minimo: { t: null, saldo: Infinity }, negativos: [] };
   const metaTotal = config.metas.fondo + config.metas.enganche;
@@ -153,13 +191,13 @@ export function proyectar(config, escOverride) {
   if (general >= metaTotal) hitos.enganche = config.ahorro.fechaCorte;
 
   for (const t of rangoMeses(inicio, config.horizonte)) {
-    const f = flujoMes(config, t, { esc, consumoPrevio });
+    const f = flujoMes(config, t, { esc, previo });
     const saldoInicial = general;
     const rendGeneral = general > 0 ? general * r : 0;
     const rendRetiro = retiro > 0 ? retiro * r : 0;
     general = general + rendGeneral + f.flujo;
     retiro = retiro + rendRetiro + f.retiro.monto;
-    consumoPrevio = f.consumoTarjeta;
+    previo = f.consumo.tarjeta;
     meses.push({ ...f, saldoInicial, rendimiento: rendGeneral, rendRetiro, general, retiroSaldo: retiro, ...reparto(general, config.metas) });
     if (!hitos.fondo && general >= config.metas.fondo) hitos.fondo = t;
     if (!hitos.enganche && general >= metaTotal) hitos.enganche = t;

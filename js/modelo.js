@@ -7,6 +7,7 @@ export function migrar(c) {
     const v = x.variable || { monto: 0, crece: true, categorias: [] };
     x.presupuestos = [{ id: 'p-ocio', nombre: 'Ocio', monto: v.monto, pago: 'tarjeta', crece: v.crece !== false, base: v.base, categorias: v.categorias || [] }];
   }
+  x.presupuestos = x.presupuestos.map((p) => ({ cambios: [], ...p }));
   delete x.variable;
   x.fijos = (x.fijos || []).map((f) => ({ pago: 'debito', ...f }));
   x.ajustes = x.ajustes || {};

@@ -113,4 +113,20 @@ export function pendientesSugeridos(config, movs, t) {
   return out;
 }
 
+// Mes cuyos pagos de tarjeta conviene mostrar: el actual, o el primero después del cierre.
+export function mesDeTarjetas(config) {
+  const t = ymActual();
+  return t > config.ahorro.fechaCorte ? t : addMonths(config.ahorro.fechaCorte, 1);
+}
+
+// Forma de pago sugerida para una categoría: la tarjeta asignada a su presupuesto o gasto fijo.
+export function pagoSugerido(config, catId) {
+  const p = config.presupuestos.find((x) => x.categorias.some((c) => c.id === catId));
+  const f = config.fijos.find((x) => x.id === catId);
+  const item = p || f;
+  if (!item) return null;
+  if (item.pago === 'tarjeta') return item.tarjeta || null;
+  return 'efectivo';
+}
+
 export { saldosActuales };

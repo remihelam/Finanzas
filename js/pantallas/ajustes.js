@@ -1,7 +1,7 @@
-import { html, useState, useEffect, Tarjeta, Campo, Num, toast, descargar } from '../ui.js';
+import { html, useState, useEffect, Tarjeta, Campo, Num, Hoja, toast, descargar } from '../ui.js';
 import { editarConfig, exportar, iniciarCon, movimientos as listaMovs, getState } from '../store.js';
-import { saldoTarjeta, proximaFecha, mesDeCierreSugerido, catalogo, nombreCuenta, pendientesSugeridos } from '../calculos.js';
-import { saldosActuales } from '../proyeccion.js';
+import { mesDeCierreSugerido, catalogo, nombreCuenta, pendientesSugeridos, flujoDelMes, mesDeTarjetas } from '../calculos.js';
+import { saldosActuales, proyectar } from '../proyeccion.js';
 import { infoSync, onSync, entrar, registrarse, salir, sincronizar, guardarCredenciales } from '../sync.js';
 import { dinero, nombreMes, MESES_LARGOS, uid, fechaCorta, hoyIso, addMonths } from '../fechas.js';
 import { generarIcs } from '../recordatorios.js';
@@ -13,11 +13,11 @@ export function Mas({ ir }) {
   const [s, setS] = useState(infoSync());
   useEffect(() => onSync(setS), []);
   const items = [
-    ['tarjetas', '💳', 'Tarjetas y deudas', 'Fechas de corte y pago, saldos'],
+    ['tarjetas', '💳', 'Tarjetas', 'Lo que pagas cada mes, tarjeta por tarjeta'],
     ['ahorro', '🏦', 'Ahorros y metas', 'Saldos de tus cuentas y cierre de mes'],
     ['sueldo', '💼', 'Sueldo y bonos', 'Aumentos, PTU, aguinaldo, prima'],
     ['fijos', '🏠', 'Gastos fijos', 'Renta, doctorado, servicios, suscripciones'],
-    ['ocio', '🍽️', 'Presupuestos', 'Ocio y gasolina: monto, forma de pago y categorías'],
+    ['ocio', '🎉', 'Ocio y gasolina', 'Presupuesto mensual, tarjeta y categorías'],
     ['escenarios', '📈', 'Escenarios', 'Aumento, inflación, rendimientos'],
     ['recordatorios', '⏰', 'Recordatorios', 'Avisos en tu calendario'],
     ['cuenta', '☁️', 'Cuenta y sincronización', textoSync(s)],
@@ -54,40 +54,102 @@ function Sub({ titulo, ir, children }) {
 
 // ---------- Tarjetas ----------
 export function Tarjetas({ config, movs, ir }) {
+  const proy = proyectar(config);
+  const meses = proy.meses.map((m) => m.t);
+  const [t, setT] = useState(() => mesDeTarjetas(config));
+  const [abierta, setAbierta] = useState(null);
+  const [editar, setEditar] = useState(null);
   const [nueva, setNueva] = useState('');
-  return html`<${Sub} titulo="Tarjetas y deudas" ir=${ir}>
-    <p class="muted">Meta: <strong>cero deudas y cero MSI desde enero 2027</strong>. Las compras con tarjeta cuentan como gasto el día que las haces. Cuando pagues la tarjeta, regístralo con <strong>+ → Pagar tarjeta</strong>.</p>
-    ${config.tarjetas.map((tj) => {
-      const s = saldoTarjeta(config, movs, tj.id);
-      const prox = proximaFecha(tj.pago);
-      const todas = config.deudas.filter((d) => d.tarjeta === tj.id);
-      const upd = (fn) => editarConfig((c) => fn(c.tarjetas.find((x) => x.id === tj.id)));
-      return html`<${Tarjeta} titulo=${'💳 ' + tj.nombre} accion=${html`<strong class=${s.saldo > 0 ? 'neg' : 'pos'}>${dinero(s.saldo)}</strong>`}>
-        <div class="dos-col">
-          <${Campo} etiqueta="Día de corte"><${Num} valor=${tj.corte} min="1" onCambio=${(v) => upd((x) => { x.corte = v; })} placeholder="—" /><//>
-          <${Campo} etiqueta="Día límite de pago"><${Num} valor=${tj.pago} min="1" onCambio=${(v) => upd((x) => { x.pago = v; })} placeholder="—" /><//>
-        </div>
-        ${prox && s.saldo > 0 && html`<p class="muted chico">Próximo pago: ${fechaCorta(prox.iso)} (en ${prox.dias} días)</p>`}
-        ${s.compras > 0 && html`<p class="muted chico">Compras registradas: ${dinero(s.compras)} · Pagos: ${dinero(s.pagos)}</p>`}
-        ${todas.length > 0 && html`<h4 class="sub">Deudas a liquidar</h4>
-          <ul class="lista lista-compacta">
-            ${todas.map((d) => html`<li class="fila">
+  const m = flujoDelMes(config, t, proy);
+  const i = meses.indexOf(t);
+  const calc = m.tarjetas.plan;
+  const ajuste = m.tarjetas.monto - calc;
+  const conPago = new Set(m.tarjetas.porTarjeta.map((g) => g.id));
+  const sinPago = config.tarjetas.filter((x) => !conPago.has(x.id));
+  const compras = (id) => movs.filter((x) => x.tipo === 'gasto' && x.cuenta === id && x.fecha.startsWith(t)).reduce((a, x) => a + Number(x.monto), 0);
+
+  return html`<${Sub} titulo="Tarjetas" ir=${ir}>
+    <div class="nav-mes">
+      <button class="icono-btn" aria-label="Mes anterior" disabled=${i <= 0} onClick=${() => setT(meses[i - 1])}>‹</button>
+      <h2>Pagos de ${nombreMes(t, true)}</h2>
+      <button class="icono-btn" aria-label="Mes siguiente" disabled=${i < 0 || i >= meses.length - 1} onClick=${() => setT(meses[i + 1])}>›</button>
+    </div>
+    <div class="kpi-grande">
+      <span class="kpi-etq">Total a pagar</span>
+      <strong>${dinero(m.tarjetas.monto)}</strong>
+      ${m.tarjetas.ajustado && html`<span class="muted chico">Incluye un ajuste manual de ${dinero(ajuste)} (calculado: ${dinero(calc)})</span>`}
+    </div>
+
+    <ul class="lista tarjeta lista-tarjetas">
+      ${m.tarjetas.porTarjeta.map((g) => {
+        const abierto = abierta === g.id;
+        return html`<li>
+          <button class="fila fila-btn" aria-expanded=${abierto} onClick=${() => setAbierta(abierto ? null : g.id)}>
+            <span class="ico-circ">💳</span>
+            <span class="fila-txt"><span class="fila-tit">${g.nombre}</span><span class="fila-sub">${g.dia ? `Pagas el día ${g.dia}` : 'Sin día de pago'}${compras(g.id) ? ` · llevas ${dinero(compras(g.id))} cargado este mes` : ''}</span></span>
+            <span class="fila-monto">${dinero(g.total)}</span>
+            <span class=${'chev-g' + (abierto ? ' abierto' : '')} aria-hidden="true"></span>
+          </button>
+          ${abierto && html`<ul class="detalle">
+            ${g.deudas.map((d) => html`<li class="fila">
               <label class="check"><input type="checkbox" checked=${d.pagada} onChange=${(e) => editarConfig((c) => { c.deudas.find((x) => x.id === d.id).pagada = e.target.checked; })} />
-                <span class=${'fila-txt ' + (d.pagada ? 'tachado' : '')}><span class="fila-tit">${d.concepto}</span><span class="fila-sub">${nombreMes(d.mes, true)}</span></span></label>
+                <span class=${'fila-txt ' + (d.pagada ? 'tachado' : '')}>${d.concepto}<span class="fila-sub">Deuda · márcala al pagar</span></span></label>
               <span class="fila-monto">${dinero(d.monto)}</span>
-              <button class="icono-btn chico" aria-label="Quitar deuda" onClick=${() => editarConfig((c) => { c.deudas = c.deudas.filter((x) => x.id !== d.id); })}>✕</button>
             </li>`)}
+            ${g.consumo.map((c) => html`<li class="fila"><span class="fila-txt">${c.icono ? c.icono + ' ' : ''}${c.nombre}<span class="fila-sub">Cargado en ${nombreMes(addMonths(t, -1), true)}</span></span><span class="fila-monto">${dinero(c.monto)}</span></li>`)}
+            ${g.id && html`<li><button class="enlace" onClick=${() => setEditar(g.id)}>Configurar ${g.nombre}</button></li>`}
           </ul>`}
-        <${NuevaDeuda} tarjeta=${tj.id} />
-        <button class="enlace peligro" onClick=${() => confirm(`¿Quitar la tarjeta ${tj.nombre}?`) && editarConfig((c) => { c.tarjetas = c.tarjetas.filter((x) => x.id !== tj.id); c.deudas = c.deudas.filter((x) => x.tarjeta !== tj.id); })}>Quitar tarjeta</button>
-      <//>`;
-    })}
-    <${Tarjeta} titulo="Agregar tarjeta">
+        </li>`;
+      })}
+      ${!m.tarjetas.porTarjeta.length && html`<li class="vacio">No hay pagos de tarjeta en ${nombreMes(t, true)}.</li>`}
+    </ul>
+    ${sinPago.length > 0 && html`<p class="muted chico">Sin pago este mes: ${sinPago.map((x) => x.nombre).join(', ')}.</p>`}
+
+    <${Tarjeta} titulo="Mis tarjetas">
+      <ul class="lista lista-compacta">
+        ${config.tarjetas.map((tj) => html`<li><button class="fila fila-btn" onClick=${() => setEditar(tj.id)}>
+          <span class="fila-txt"><span class="fila-tit">${tj.nombre}</span><span class="fila-sub">${tj.corte ? `Corte día ${tj.corte} · ` : ''}${tj.pago ? `Pago día ${tj.pago}` : 'Sin día de pago'}</span></span>
+          <span class="chev">›</span>
+        </button></li>`)}
+      </ul>
       <div class="fila-form">
-        <input placeholder="Nombre (ej. Klar)" value=${nueva} onInput=${(e) => setNueva(e.target.value)} />
+        <input placeholder="Agregar tarjeta (ej. Klar)" value=${nueva} onInput=${(e) => setNueva(e.target.value)} />
         <button class="btn" disabled=${!nueva.trim()} onClick=${() => { editarConfig((c) => c.tarjetas.push({ id: 't-' + uid().slice(0, 8), nombre: nueva.trim() })); setNueva(''); }}>Agregar</button>
       </div>
     <//>
+    ${editar && html`<${EditarTarjeta} config=${config} id=${editar} onCerrar=${() => setEditar(null)} />`}
+  <//>`;
+}
+
+function EditarTarjeta({ config, id, onCerrar }) {
+  const tj = config.tarjetas.find((x) => x.id === id);
+  if (!tj) return null;
+  const upd = (fn) => editarConfig((c) => fn(c.tarjetas.find((x) => x.id === id)));
+  const deudas = config.deudas.filter((d) => d.tarjeta === id).sort((a, b) => (a.mes < b.mes ? -1 : 1));
+  const usos = [...config.fijos, ...config.presupuestos].filter((x) => x.pago === 'tarjeta' && x.tarjeta === id);
+  return html`<${Hoja} titulo=${tj.nombre} onCerrar=${onCerrar}>
+    <div class="form">
+      <${Campo} etiqueta="Nombre"><input value=${tj.nombre} onChange=${(e) => upd((x) => { x.nombre = e.target.value; })} /><//>
+      <div class="dos-col">
+        <${Campo} etiqueta="Día de corte"><${Num} valor=${tj.corte} min="1" placeholder="—" onCambio=${(v) => upd((x) => { x.corte = v; })} /><//>
+        <${Campo} etiqueta="Día límite de pago"><${Num} valor=${tj.pago} min="1" placeholder="—" onCambio=${(v) => upd((x) => { x.pago = v; })} /><//>
+      </div>
+      ${usos.length > 0 && html`<p class="muted chico">Cargas a esta tarjeta: ${usos.map((x) => x.nombre).join(', ')}.</p>`}
+      <h4 class="sub">Deudas por mes</h4>
+      ${deudas.length === 0 && html`<p class="muted chico">Sin deudas registradas.</p>`}
+      <ul class="lista lista-compacta">
+        ${deudas.map((d) => html`<li class="fila">
+          <span class=${'fila-txt ' + (d.pagada ? 'tachado' : '')}><span class="fila-tit">${d.concepto}</span><span class="fila-sub">${nombreMes(d.mes, true)}${d.pagada ? ' · pagada' : ''}</span></span>
+          <span class="fila-monto">${dinero(d.monto)}</span>
+          <button class="icono-btn chico" aria-label="Quitar deuda" onClick=${() => editarConfig((c) => { c.deudas = c.deudas.filter((x) => x.id !== d.id); })}>✕</button>
+        </li>`)}
+      </ul>
+      <${NuevaDeuda} tarjeta=${id} />
+      <div class="acciones">
+        <button class="btn btn-peligro" onClick=${() => { if (confirm(`¿Quitar la tarjeta ${tj.nombre}?`)) { editarConfig((c) => { c.tarjetas = c.tarjetas.filter((x) => x.id !== id); c.deudas = c.deudas.filter((x) => x.tarjeta !== id); }); onCerrar(); } }}>Quitar tarjeta</button>
+        <button class="btn btn-primario" onClick=${onCerrar}>Listo</button>
+      </div>
+    </div>
   <//>`;
 }
 
@@ -257,42 +319,94 @@ const AJUSTES = [
   ['colegiatura', 'Colegiatura (% según escenario)'],
 ];
 
+// Selector de forma de pago (cuenta o tarjeta concreta) compartido por fijos y presupuestos.
+function FormaDePago({ config, item, onCambio }) {
+  const valor = item.pago === 'tarjeta' ? item.tarjeta || 'tarjeta' : 'debito';
+  return html`<${Campo} etiqueta="¿Cómo se paga?" ayuda=${item.pago === 'tarjeta' ? 'Lo que cargas a la tarjeta este mes lo pagas el mes siguiente.' : 'Sale de tu cuenta el mismo mes.'}>
+    <select value=${valor} onChange=${(e) => {
+      const v = e.target.value;
+      onCambio(v === 'debito' ? { pago: 'debito', tarjeta: undefined } : { pago: 'tarjeta', tarjeta: v === 'tarjeta' ? undefined : v });
+    }}>
+      <option value="debito">De mi cuenta (débito o efectivo)</option>
+      ${config.tarjetas.map((t) => html`<option value=${t.id}>Tarjeta ${t.nombre}</option>`)}
+      ${valor === 'tarjeta' && html`<option value="tarjeta">Tarjeta (sin elegir)</option>`}
+    </select>
+  <//>`;
+}
+
+function nombrePago(config, x) {
+  if (x.pago !== 'tarjeta') return 'De tu cuenta';
+  const t = config.tarjetas.find((k) => k.id === x.tarjeta);
+  return t ? t.nombre : 'Tarjeta';
+}
+
 export function Fijos({ config, ir }) {
-  const updF = (id, fn) => editarConfig((c) => fn(c.fijos.find((x) => x.id === id)));
+  const [editar, setEditar] = useState(null);
+  const hoy = hoyIso().slice(0, 7);
+  const activos = config.fijos.filter((f) => !f.hasta || f.hasta >= hoy);
+  const terminados = config.fijos.filter((f) => f.hasta && f.hasta < hoy);
+  const fila = (f) => html`<li><button class="fila fila-btn" onClick=${() => setEditar(f.id)}>
+    <span class="ico-circ">${f.icono || '📌'}</span>
+    <span class="fila-txt"><span class="fila-tit">${f.nombre}</span>
+      <span class="fila-sub">${f.frecuencia === 'anual' ? `Cada ${MESES_LARGOS[(f.mes || 1) - 1]}` : 'Mensual'}${f.hasta ? ` · hasta ${nombreMes(f.hasta)}` : ''}</span></span>
+    <span class=${'chip-pago' + (f.pago === 'tarjeta' ? ' tarjeta' : '')}>${nombrePago(config, f)}</span>
+    <span class="fila-monto">${dinero(f.monto)}</span>
+  </button></li>`;
+  const nuevo = () => {
+    const id = 'f-' + uid().slice(0, 8);
+    editarConfig((c) => c.fijos.push({ id, nombre: 'Nuevo gasto', icono: '📌', monto: 0, frecuencia: 'mensual', pago: 'debito', base: hoy, desde: hoy, ajuste: { tipo: 'ninguno' } }));
+    setEditar(id);
+  };
   return html`<${Sub} titulo="Gastos fijos" ir=${ir}>
-    <p class="muted">Si un mes pagas distinto (p. ej. la colegiatura subió), regístralo con el monto real: la app usa el mayor entre lo planeado y lo pagado. Para cambiar el plan de un mes específico usa “montos por mes”.</p>
-    ${config.fijos.map((f) => {
-      const a = f.ajuste || { tipo: 'ninguno' };
-      return html`<${Tarjeta} titulo=${(f.icono || '📌') + ' ' + f.nombre}>
-        <div class="dos-col">
-          <${Campo} etiqueta="Nombre"><input value=${f.nombre} onChange=${(e) => updF(f.id, (x) => { x.nombre = e.target.value; })} /><//>
-          <${Campo} etiqueta="Ícono"><input value=${f.icono || ''} maxlength="4" onChange=${(e) => updF(f.id, (x) => { x.icono = e.target.value; })} /><//>
+    <p class="muted chico">Toca un gasto para editarlo. Para cambiar el monto de un solo mes usa <strong>Plan → Mes por mes</strong>.</p>
+    <ul class="lista tarjeta">${activos.map(fila)}</ul>
+    ${terminados.length > 0 && html`<h4 class="sub">Ya terminaron</h4><ul class="lista tarjeta">${terminados.map(fila)}</ul>`}
+    <button class="btn btn-ancho" onClick=${nuevo}>+ Agregar gasto fijo</button>
+    ${editar && html`<${EditarFijo} config=${config} id=${editar} onCerrar=${() => setEditar(null)} />`}
+  <//>`;
+}
+
+function EditarFijo({ config, id, onCerrar }) {
+  const f = config.fijos.find((x) => x.id === id);
+  if (!f) return null;
+  const updF = (fn) => editarConfig((c) => fn(c.fijos.find((x) => x.id === id)));
+  const a = f.ajuste || { tipo: 'ninguno' };
+  return html`<${Hoja} titulo=${(f.icono || '📌') + ' ' + f.nombre} onCerrar=${onCerrar}>
+    <div class="form">
+      <div class="fila-form">
+        <input class="ico-input" value=${f.icono || ''} maxlength="4" aria-label="Ícono" onChange=${(e) => updF((x) => { x.icono = e.target.value; })} />
+        <input value=${f.nombre} aria-label="Nombre" onChange=${(e) => updF((x) => { x.nombre = e.target.value; })} />
+      </div>
+      <div class="dos-col">
+        <${Campo} etiqueta="Monto"><${Num} valor=${f.monto} onCambio=${(v) => updF((x) => { x.monto = n0(v); })} /><//>
+        <${Campo} etiqueta="Frecuencia"><select value=${f.frecuencia} onChange=${(e) => updF((x) => { x.frecuencia = e.target.value; if (!x.mes) x.mes = 1; })}>
+          <option value="mensual">Mensual</option><option value="anual">Una vez al año</option></select><//>
+      </div>
+      <${FormaDePago} config=${config} item=${f} onCambio=${(v) => updF((x) => Object.assign(x, v))} />
+      <div class="dos-col">
+        ${f.frecuencia === 'anual'
+          ? html`<${Campo} etiqueta="Mes de pago"><select value=${f.mes} onChange=${(e) => updF((x) => { x.mes = Number(e.target.value); })}>${MESES_OPC}</select><//>`
+          : html`<${Campo} etiqueta="Día de pago"><${Num} valor=${f.dia} min="1" placeholder="—" onCambio=${(v) => updF((x) => { x.dia = v; })} /><//>`}
+        <${Campo} etiqueta="Termina en"><input type="month" value=${f.hasta || ''} onChange=${(e) => updF((x) => { x.hasta = e.target.value || undefined; })} /><//>
+      </div>
+      <details class="avanzado">
+        <summary>Más opciones</summary>
+        <div class="form">
+          <${Campo} etiqueta="Empieza en"><input type="month" value=${f.desde || ''} onChange=${(e) => updF((x) => { x.desde = e.target.value || undefined; })} /><//>
+          <${Campo} etiqueta="¿Cómo cambia con los años?"><select value=${a.tipo} onChange=${(e) => updF((x) => { x.ajuste = { ...(x.ajuste || {}), tipo: e.target.value }; if (!x.base) x.base = hoyIso().slice(0, 7); })}>
+            ${AJUSTES.map(([v, t]) => html`<option value=${v}>${t}</option>`)}</select><//>
+          ${(a.tipo === 'escalon' || a.tipo === 'porcentaje' || a.tipo === 'colegiatura') && html`<div class="dos-col">
+            ${a.tipo !== 'colegiatura' && html`<${Campo} etiqueta=${a.tipo === 'escalon' ? 'Cuánto sube ($)' : 'Cuánto sube (%)'}><${Num} valor=${a.valor} onCambio=${(v) => updF((x) => { x.ajuste.valor = n0(v); })} /><//>`}
+            <${Campo} etiqueta="Mes en que sube"><select value=${a.mes || 1} onChange=${(e) => updF((x) => { x.ajuste.mes = Number(e.target.value); })}>${MESES_OPC}</select><//>
+          </div>`}
+          <${Campo} etiqueta="Montos por mes (excepciones)" ayuda="Formato: 2026-12=8850, 2027-01=8950"><input value=${textoExcepciones(f.overrides)} onChange=${(e) => updF((x) => { x.overrides = leerExcepciones(e.target.value); })} /><//>
         </div>
-        <${Campo} etiqueta="¿Cómo se paga?"><select value=${f.pago || 'debito'} onChange=${(e) => updF(f.id, (x) => { x.pago = e.target.value; })}>
-          <option value="debito">De mi cuenta (sale el mismo mes)</option>
-          <option value="tarjeta">Con tarjeta (lo pago el mes siguiente)</option></select><//>
-        <div class="dos-col">
-          <${Campo} etiqueta="Monto"><${Num} valor=${f.monto} onCambio=${(v) => updF(f.id, (x) => { x.monto = n0(v); })} /><//>
-          <${Campo} etiqueta="Frecuencia"><select value=${f.frecuencia} onChange=${(e) => updF(f.id, (x) => { x.frecuencia = e.target.value; if (!x.mes) x.mes = 1; })}>
-            <option value="mensual">Mensual</option><option value="anual">Una vez al año</option></select><//>
-        </div>
-        <div class="dos-col">
-          ${f.frecuencia === 'anual'
-            ? html`<${Campo} etiqueta="Mes de pago"><select value=${f.mes} onChange=${(e) => updF(f.id, (x) => { x.mes = Number(e.target.value); })}>${MESES_OPC}</select><//>`
-            : html`<${Campo} etiqueta="Día de pago"><${Num} valor=${f.dia} min="1" placeholder="—" onCambio=${(v) => updF(f.id, (x) => { x.dia = v; })} /><//>`}
-          <${Campo} etiqueta="Termina en (opcional)"><input type="month" value=${f.hasta || ''} onChange=${(e) => updF(f.id, (x) => { x.hasta = e.target.value || undefined; })} /><//>
-        </div>
-        <${Campo} etiqueta="¿Cómo cambia con los años?"><select value=${a.tipo} onChange=${(e) => updF(f.id, (x) => { x.ajuste = { ...(x.ajuste || {}), tipo: e.target.value }; if (!x.base) x.base = hoyIso().slice(0, 7); })}>
-          ${AJUSTES.map(([v, t]) => html`<option value=${v}>${t}</option>`)}</select><//>
-        ${(a.tipo === 'escalon' || a.tipo === 'porcentaje' || a.tipo === 'colegiatura') && html`<div class="dos-col">
-          ${a.tipo !== 'colegiatura' && html`<${Campo} etiqueta=${a.tipo === 'escalon' ? 'Cuánto sube ($)' : 'Cuánto sube (%)'}><${Num} valor=${a.valor} onCambio=${(v) => updF(f.id, (x) => { x.ajuste.valor = n0(v); })} /><//>`}
-          <${Campo} etiqueta="Mes en que sube"><select value=${a.mes || 1} onChange=${(e) => updF(f.id, (x) => { x.ajuste.mes = Number(e.target.value); })}>${MESES_OPC}</select><//>
-        </div>`}
-        <${Campo} etiqueta="Montos por mes (excepciones)" ayuda="Formato: 2026-12=8850, 2027-01=8950"><input value=${textoExcepciones(f.overrides)} onChange=${(e) => updF(f.id, (x) => { x.overrides = leerExcepciones(e.target.value); })} /><//>
-        <button class="enlace peligro" onClick=${() => confirm(`¿Quitar ${f.nombre}?`) && editarConfig((c) => { c.fijos = c.fijos.filter((x) => x.id !== f.id); })}>Quitar gasto</button>
-      <//>`;
-    })}
-    <button class="btn btn-ancho" onClick=${() => editarConfig((c) => c.fijos.push({ id: 'f-' + uid().slice(0, 8), nombre: 'Nuevo gasto', icono: '📌', monto: 0, frecuencia: 'mensual', base: hoyIso().slice(0, 7), desde: hoyIso().slice(0, 7), ajuste: { tipo: 'ninguno' } }))}>+ Agregar gasto fijo</button>
+      </details>
+      <div class="acciones">
+        <button class="btn btn-peligro" onClick=${() => { if (confirm(`¿Quitar ${f.nombre}?`)) { editarConfig((c) => { c.fijos = c.fijos.filter((x) => x.id !== id); }); onCerrar(); } }}>Quitar</button>
+        <button class="btn btn-primario" onClick=${onCerrar}>Listo</button>
+      </div>
+    </div>
   <//>`;
 }
 
@@ -307,11 +421,17 @@ export function Ocio({ config, ir }) {
       return html`<${Tarjeta} titulo=${p.nombre}>
         <div class="dos-col">
           <${Campo} etiqueta="Nombre"><input value=${p.nombre} onChange=${(e) => upd(p.id, (x) => { x.nombre = e.target.value; })} /><//>
-          <${Campo} etiqueta="Monto mensual"><${Num} valor=${p.monto} onCambio=${(v) => upd(p.id, (x) => { x.monto = n0(v); x.base = hoyIso().slice(0, 7); })} /><//>
+          <${Campo} etiqueta="Monto mensual base"><${Num} valor=${p.monto} onCambio=${(v) => upd(p.id, (x) => { x.monto = n0(v); x.base = hoyIso().slice(0, 7); })} /><//>
         </div>
-        <${Campo} etiqueta="¿Cómo se paga?"><select value=${p.pago || 'debito'} onChange=${(e) => upd(p.id, (x) => { x.pago = e.target.value; })}>
-          <option value="tarjeta">Con tarjeta (lo pago el mes siguiente)</option>
-          <option value="debito">De mi cuenta (sale el mismo mes)</option></select><//>
+        <${FormaDePago} config=${config} item=${p} onCambio=${(v) => upd(p.id, (x) => Object.assign(x, v))} />
+        <h4 class="sub">Cambios programados</h4>
+        <p class="muted chico">Desde el mes que indiques, el presupuesto pasa a ese monto (por ejemplo, cuando termines de pagar algo).</p>
+        ${(p.cambios || []).map((c, k) => html`<div class="fila-form">
+          <input type="month" aria-label="Desde" value=${c.desde} onChange=${(e) => upd(p.id, (x) => { x.cambios[k].desde = e.target.value; })} />
+          <input class="monto-input" type="number" inputmode="decimal" aria-label="Monto" value=${c.monto} onChange=${(e) => upd(p.id, (x) => { x.cambios[k].monto = n0(Number(e.target.value)); })} />
+          <button class="icono-btn chico" aria-label="Quitar cambio" onClick=${() => upd(p.id, (x) => { x.cambios.splice(k, 1); })}>✕</button>
+        </div>`)}
+        <button class="enlace" onClick=${() => upd(p.id, (x) => { x.cambios = [...(x.cambios || []), { desde: addMonths(hoyIso().slice(0, 7), 1), monto: x.monto }]; })}>+ Agregar cambio</button>
         <label class="interruptor"><input type="checkbox" checked=${p.crece} onChange=${(e) => upd(p.id, (x) => { x.crece = e.target.checked; })} /><span>Ajustar con la inflación cada enero</span></label>
         <h4 class="sub">Categorías</h4>
         <ul class="lista lista-compacta">

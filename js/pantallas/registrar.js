@@ -1,7 +1,7 @@
 // Registro rápido: monto → categoría → forma de pago (se guarda solo).
 import { html, useState, Hoja, Seg, Campo, toast } from '../ui.js';
 import { agregarMov, editarMov, borrarMov, getState } from '../store.js';
-import { catalogo, cuentasPago } from '../calculos.js';
+import { catalogo, cuentasPago, pagoSugerido } from '../calculos.js';
 import { dinero, hoyIso, fechaCorta } from '../fechas.js';
 
 function ayer() {
@@ -18,6 +18,7 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
   const [fecha, setFecha] = useState(hoyIso());
   const [nota, setNota] = useState('');
   const ultima = (getState().prefs || {}).ultimaCuenta;
+  const sugerida = (categoria && pagoSugerido(config, categoria)) || ultima;
 
   const n = Number(monto) || 0;
   const tecla = (k) => {
@@ -86,7 +87,7 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
       <h3 class="paso-titulo">${tipo === 'pago' ? '¿Qué tarjeta pagaste?' : tipo === 'ingreso' ? '¿A dónde llegó?' : '¿Cómo pagaste?'}</h3>
       <div class="rejilla">
         ${(tipo === 'pago' ? config.tarjetas.map((t) => ({ ...t, icono: '💳' })) : cuentasPago(config)).map(
-          (c) => html`<button class=${'opcion' + (tipo === 'gasto' && c.id === ultima ? ' sugerida' : '')} onClick=${() => guardar(c.id)}><span class="op-ico">${c.icono}</span>${c.nombre}</button>`
+          (c) => html`<button class=${'opcion' + (tipo === 'gasto' && c.id === sugerida ? ' sugerida' : '')} onClick=${() => guardar(c.id)}><span class="op-ico">${c.icono}</span>${c.nombre}</button>`
         )}
       </div>
     </div>`}

@@ -24,3 +24,25 @@ export function presupuestoDeCategoria(config, catId) {
   const p = config.presupuestos.find((x) => x.categorias.some((c) => c.id === catId));
   return p ? p.id : null;
 }
+
+// Mes al que "pertenece" un gasto para presupuesto y tarjeta.
+// Normalmente es el mes de la compra; si se paga en un mes posterior (compra después del corte),
+// cuenta como consumo del mes anterior al pago (mes vencido).
+export function mesConsumo(m) {
+  if (m.pagoMes) {
+    const [y, mm] = m.pagoMes.split('-').map(Number);
+    const total = y * 12 + (mm - 1) - 1;
+    return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`;
+  }
+  return m.fecha.slice(0, 7);
+}
+
+// Mes en que se paga una compra con tarjeta: el que elegiste, o el que toca según el día de corte.
+export function mesDePagoAuto(config, cuenta, fecha) {
+  const tj = config.tarjetas.find((x) => x.id === cuenta);
+  if (!tj) return null;
+  const [y, m, d] = fecha.split('-').map(Number);
+  const salto = tj.corte && d > tj.corte ? 2 : 1;
+  const total = y * 12 + (m - 1) + salto;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`;
+}

@@ -416,3 +416,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .op-usual { font-size: 10px; font-weight: 700; color: var(--acento); text-transform: uppercase; letter-spacing: 0.04em; }
 .toast { max-width: min(560px, calc(100% - 32px)); }
 .toast { width: max-content; line-height: 1.35; }
+.etq-fila { font-size: 13px; color: var(--tinta-2); width: 100%; }
+.tag-pago { color: var(--acento); font-weight: 600; }
+.compra-btn { width: 100%; display: flex; justify-content: space-between; gap: 8px; background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px; color: var(--tinta-2); text-align: left; }
+.compra-btn:active { color: var(--acento); }

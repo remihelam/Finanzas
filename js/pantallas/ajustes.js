@@ -53,7 +53,7 @@ function Sub({ titulo, ir, children }) {
 }
 
 // ---------- Tarjetas ----------
-export function Tarjetas({ config, movs, ir }) {
+export function Tarjetas({ config, movs, ir, editar: editarMovimiento }) {
   const proy = proyectar(config);
   const meses = proy.meses.map((m) => m.t);
   const [t, setT] = useState(() => mesDeTarjetas(config));
@@ -102,7 +102,11 @@ export function Tarjetas({ config, movs, ir }) {
               ${(c.compras || []).length > 0 && html`<ul class="compras">
                 ${c.compras.map((k) => {
                   const ca = cat.get(k.categoria) || { icono: '📦', nombre: 'Otros' };
-                  return html`<li><span>${fechaCorta(k.fecha)} · ${ca.icono} ${ca.nombre}${k.nota ? ' · ' + k.nota : ''}</span><span class="num">${dinero(k.monto)}</span></li>`;
+                  const mov = movs.find((x) => x.id === k.id);
+                  return html`<li><button class="compra-btn" disabled=${!mov} onClick=${() => mov && editarMovimiento(mov)}>
+                    <span>${fechaCorta(k.fecha)} · ${ca.icono} ${ca.nombre}${k.pagoMes ? ' · después del corte' : ''}${k.nota ? ' · ' + k.nota : ''}</span>
+                    <span class="num">${dinero(k.monto)} ✎</span>
+                  </button></li>`;
                 })}
               </ul>`}
             </li>`)}

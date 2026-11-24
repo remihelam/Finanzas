@@ -6,6 +6,9 @@ export function Movimientos({ config, movs, editar }) {
   const [t, setT] = useState(ymActual());
   const [filtro, setFiltro] = useState('todos');
   const cat = catalogo(config);
+  // Se puede avanzar hasta el último mes con movimientos (compras programadas) o el actual.
+  const futuros = movs.filter((m) => m.fecha && m.fecha.slice(0, 7) > ymActual()).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  const ultimoMes = futuros.length ? futuros[futuros.length - 1].fecha.slice(0, 7) : ymActual();
   const delMes = movs.filter((m) => m.fecha.startsWith(t) && (filtro === 'todos' || m.tipo === filtro));
   const gastos = delMes.filter((m) => m.tipo === 'gasto').reduce((a, m) => a + Number(m.monto), 0);
   const ingresos = delMes.filter((m) => m.tipo === 'ingreso').reduce((a, m) => a + Number(m.monto), 0);
@@ -21,8 +24,12 @@ export function Movimientos({ config, movs, editar }) {
     <div class="nav-mes">
       <button class="icono-btn" aria-label="Mes anterior" onClick=${() => setT(addMonths(t, -1))}>‹</button>
       <h2>${nombreMes(t, true)}</h2>
-      <button class="icono-btn" aria-label="Mes siguiente" disabled=${t >= ymActual()} onClick=${() => setT(addMonths(t, 1))}>›</button>
+      <button class="icono-btn" aria-label="Mes siguiente" disabled=${t >= ultimoMes} onClick=${() => setT(addMonths(t, 1))}>›</button>
     </div>
+    ${futuros.length > 0 && t === ymActual() && html`<div class="aviso aviso-info">
+      <span>🗓️ Tienes ${futuros.length} ${futuros.length === 1 ? 'compra programada' : 'compras programadas'} con fecha posterior a este mes.</span>
+      <button class="btn btn-chico" onClick=${() => setT(futuros[0].fecha.slice(0, 7))}>Ver</button>
+    </div>`}
     <div class="totales">
       <div><span class="muted">Gastos</span><strong>${dinero(gastos)}</strong></div>
       <div><span class="muted">Ingresos extra</span><strong class="pos">${dinero(ingresos)}</strong></div>
@@ -41,7 +48,7 @@ export function Movimientos({ config, movs, editar }) {
           const c = m.tipo === 'pago' ? { icono: '💳', nombre: 'Pago de tarjeta' } : cat.get(m.categoria) || { icono: '❔', nombre: 'Sin categoría' };
           return html`<li><button class="fila fila-btn" onClick=${() => editar(m)}>
             <span class="ico-circ">${c.icono}</span>
-            <span class="fila-txt"><span class="fila-tit">${c.nombre}</span><span class="fila-sub">${nombreCuenta(config, m.cuenta)}${m.nota ? ' · ' + m.nota : ''}</span></span>
+            <span class="fila-txt"><span class="fila-tit">${c.nombre}</span><span class="fila-sub">${nombreCuenta(config, m.cuenta)}${m.pagoMes ? html` · <strong class="tag-pago">se paga en ${nombreMes(m.pagoMes, true)}</strong>` : ''}${m.nota ? ' · ' + m.nota : ''}</span></span>
             <span class=${'fila-monto ' + (m.tipo === 'ingreso' ? 'pos' : '')}>${m.tipo === 'ingreso' ? '+' : m.tipo === 'gasto' ? '−' : ''}${dinero(m.monto)}</span>
           </button></li>`;
         })}

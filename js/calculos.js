@@ -1,6 +1,6 @@
 // Cálculos sobre lo real (movimientos registrados) comparado con el plan.
 import { flujoMes, proyectar, saldosActuales, reparto, arranque, indexarGastos, escenarioActivo, montoFijo } from './proyeccion.js';
-import { categoriasVariables } from './modelo.js';
+import { categoriasVariables, mesConsumo } from './modelo.js';
 import { diasEnMes, hoyIso, ymActual, addMonths, nombreMes, dinero } from './fechas.js';
 
 const suma = (xs) => xs.reduce((a, m) => a + (Number(m.monto) || 0), 0);
@@ -37,7 +37,7 @@ export function flujoDelMes(config, t, proy) {
 export function resumenMes(config, movs, t) {
   const idx = indexarGastos(movs);
   const f = flujoMes(config, t, { idx });
-  const delMes = movs.filter((m) => m.fecha && m.fecha.startsWith(t));
+  const delMes = movs.filter((m) => m.fecha && (m.tipo === 'gasto' ? mesConsumo(m) === t : m.fecha.startsWith(t)));
   const gastos = delMes.filter((m) => m.tipo === 'gasto');
   const fijoIds = new Set(config.fijos.map((x) => x.id));
 

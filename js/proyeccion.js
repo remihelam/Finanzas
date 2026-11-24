@@ -2,6 +2,7 @@
 // lo que consumes con tarjeta en un mes sale de tu cuenta al mes siguiente.
 // Es puro (no toca pantalla ni almacenamiento) para poder probarlo aparte.
 import { addMonths, parseYm, vecesMes, rangoMeses, ymActual } from './fechas.js';
+import { mesConsumo } from './modelo.js';
 
 export function escenarioActivo(config) {
   return config.escenarios[config.escenario] || config.escenarios.base;
@@ -76,12 +77,12 @@ let proveedorMovs = () => [];
 export function usarMovimientos(fn) {
   proveedorMovs = fn;
 }
-// Gastos registrados agrupados por mes ('AAAA-MM' → lista).
+// Gastos registrados agrupados por mes de consumo ('AAAA-MM' → lista).
 export function indexarGastos(movs) {
   const idx = new Map();
   for (const m of movs || []) {
     if (m.tipo !== 'gasto' || !m.fecha || m.deleted) continue;
-    const t = m.fecha.slice(0, 7);
+    const t = mesConsumo(m);
     if (!idx.has(t)) idx.set(t, []);
     idx.get(t).push(m);
   }
@@ -129,7 +130,7 @@ function consumoMes(config, esc, t, idx, esCorte = false) {
     const reales = gastos.filter((g) => g.categoria === f.id);
     if (reales.length) {
       for (const [k, monto] of porCuenta(reales)) {
-        const compras = reales.filter((g) => (tarjetaDe(g.cuenta) || 'efectivo') === k).map((g) => ({ id: g.id, fecha: g.fecha, categoria: g.categoria, monto: Number(g.monto) || 0, nota: g.nota }));
+        const compras = reales.filter((g) => (tarjetaDe(g.cuenta) || 'efectivo') === k).map((g) => ({ id: g.id, fecha: g.fecha, categoria: g.categoria, monto: Number(g.monto) || 0, nota: g.nota, pagoMes: g.pagoMes }));
         fijos.push({ ...base, id: f.id + '@' + k, ...pagoDe(k), monto, real: monto, registrado: true, editable: false, compras });
       }
     } else if (!esCorte && (plan > 0 || ajustado)) {
@@ -152,7 +153,7 @@ function consumoMes(config, esc, t, idx, esCorte = false) {
     const cuentas = porCuenta(reales);
     if (!cuentas.has(def)) cuentas.set(def, 0);
     const llave = (g) => tarjetaDe(g.cuenta) || 'efectivo';
-    const compras = (k) => reales.filter((g) => llave(g) === k).map((g) => ({ id: g.id, fecha: g.fecha, categoria: g.categoria, monto: Number(g.monto) || 0, nota: g.nota }));
+    const compras = (k) => reales.filter((g) => llave(g) === k).map((g) => ({ id: g.id, fecha: g.fecha, categoria: g.categoria, monto: Number(g.monto) || 0, nota: g.nota, pagoMes: g.pagoMes }));
     const habitual = def === 'efectivo' ? 'débito' : nombreDe(def);
     // Lo que de este presupuesto pagaste con otra cuenta o tarjeta (para mostrarlo en la habitual).
     const otras = [...cuentas.entries()].filter(([k, real]) => k !== def && real > 0).map(([k, real]) => ({ cuenta: k, nombre: nombreDe(k), monto: real }));

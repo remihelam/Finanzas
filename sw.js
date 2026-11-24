@@ -1,11 +1,11 @@
 // Service worker: permite abrir la app sin conexión. Sube VERSION cuando cambies archivos.
-const VERSION = 'finanzas-v8';
+const VERSION = 'finanzas-v9';
 const ARCHIVOS = [
   './', 'index.html', 'styles.css', 'config.js', 'manifest.webmanifest',
   'vendor/preact-htm.js', 'vendor/supabase.js',
   'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/fechas.js', 'js/proyeccion.js', 'js/modelo.js', 'js/calculos.js', 'js/defaults.js', 'js/recordatorios.js',
   'js/pantallas/inicio.js', 'js/pantallas/movimientos.js', 'js/pantallas/plan.js', 'js/pantallas/registrar.js', 'js/pantallas/ajustes.js',
-  'icons/icon-192.png', 'icons/apple-touch-icon.png',
+  'icons/icon-192.png', 'icons/apple-touch-icon.png', 'version.json',
 ];
 
 self.addEventListener('install', (e) => {
@@ -20,8 +20,9 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // Siempre revalida con el servidor (evita quedarse con archivos viejos tras una actualización).
   e.respondWith(
-    fetch(e.request)
+    fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' })
       .then((r) => {
         if (r.ok) {
           const copia = r.clone();

@@ -20,7 +20,7 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
   const [categoria, setCategoria] = useState(prellenado ? prellenado.categoria : null);
   const [fecha, setFecha] = useState(hoyIso());
   const [nota, setNota] = useState('');
-  const [pago, setPago] = useState('auto'); // 'auto' | 'AAAA-MM' (mes en que se paga la compra con tarjeta)
+  const [pago, setPago] = useState(null); // null = automático; si no, 'AAAA-MM' en que se paga con tarjeta
   const [otroMes, setOtroMes] = useState(false);
   const ultima = (getState().prefs || {}).ultimaCuenta;
   const sugerida = (categoria && pagoSugerido(config, categoria)) || ultima;
@@ -34,7 +34,26 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
   };
 
   // Mes en que se paga: el elegido, o el automático según el día de corte de la tarjeta.
-  const mesPago = (cuenta) => (pago === 'auto' ? mesDePagoAuto(config, cuenta, fecha) : pago);
+  const mesCompra = fecha.slice(0, 7);
+  const tarjetaUsual = config.tarjetas.some((x) => x.id === sugerida) ? sugerida : null;
+  const autoMes = (tarjetaUsual && mesDePagoAuto(config, tarjetaUsual, fecha)) || addMonths(mesCompra, 1);
+  const mesElegido = pago || autoMes;
+  const mesPago = (cuenta) => pago || mesDePagoAuto(config, cuenta, fecha);
+
+  // ¿De qué presupuesto sale? Del mes anterior al pago (mes vencido).
+  const impacto = (() => {
+    if (tipo !== 'gasto' || !categoria) return null;
+    const mesP = addMonths(mesElegido, -1);
+    const presu = config.presupuestos.find((p) => p.categorias.some((c) => c.id === categoria));
+    const fijo = config.fijos.find((f) => f.id === categoria);
+    if (presu) {
+      const r = resumenMes(config, movimientos(), mesP).presupuestos.find((x) => x.id === presu.id);
+      const queda = (r ? r.restante : 0) - n;
+      return { mes: mesP, texto: `Sale de tu presupuesto de ${soloMes(mesP)}`, detalle: queda >= 0 ? `Te quedarían ${dinero(queda)} de ${dinero(r ? r.monto : 0)}` : `Te pasarías por ${dinero(-queda)}`, alerta: queda < 0 };
+    }
+    if (fijo) return { mes: mesP, texto: `Cuenta como ${fijo.nombre} de ${soloMes(mesP)}`, detalle: null };
+    return null;
+  })();
 
   const guardar = (cuenta) => {
     const tj = config.tarjetas.find((x) => x.id === cuenta);
@@ -103,15 +122,22 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
         <button class=${'chip' + (fecha === ayer() ? ' activo' : '')} onClick=${() => setFecha(ayer())}>Ayer</button>
         <input class="chip-fecha" type="date" value=${fecha} aria-label="Otra fecha" onInput=${(e) => e.target.value && setFecha(e.target.value)} />
       </div>
-      ${tipo === 'gasto' && html`<div class="fila-fecha" role="group" aria-label="Si pagas con tarjeta, se paga en">
+      ${tipo === 'gasto' && html`<div class="fila-fecha" role="group" aria-label="Con tarjeta se paga en">
         <span class="etq-fila">Con tarjeta se paga en</span>
-        <button class=${'chip' + (pago === 'auto' ? ' activo' : '')} onClick=${() => { setPago('auto'); setOtroMes(false); }}>Automático</button>
-        <button class=${'chip' + (pago === addMonths(fecha.slice(0, 7), 2) ? ' activo' : '')} onClick=${() => { setPago(addMonths(fecha.slice(0, 7), 2)); setOtroMes(false); }}>${soloMes(addMonths(fecha.slice(0, 7), 2))}</button>
+        ${[1, 2, 3].map((k) => {
+          const mes = addMonths(mesCompra, k);
+          return html`<button class=${'chip' + (mesElegido === mes && !otroMes ? ' activo' : '')} onClick=${() => { setPago(mes === autoMes ? null : mes); setOtroMes(false); }}>
+            ${soloMes(mes)}${mes === autoMes ? html`<span class="chip-auto"> · auto</span>` : ''}
+          </button>`;
+        })}
         ${otroMes
-          ? html`<input class="chip-fecha" type="month" value=${pago === 'auto' ? addMonths(fecha.slice(0, 7), 1) : pago} aria-label="Mes de pago" onInput=${(e) => e.target.value && setPago(e.target.value)} />`
-          : html`<button class="chip" onClick=${() => setOtroMes(true)}>Otro mes</button>`}
+          ? html`<input class="chip-fecha" type="month" value=${mesElegido} aria-label="Mes de pago" onInput=${(e) => e.target.value && setPago(e.target.value)} />`
+          : html`<button class="chip" onClick=${() => setOtroMes(true)}>Otro</button>`}
       </div>`}
-      ${tipo === 'gasto' && pago === 'auto' && html`<p class="muted chico">Automático: ${soloMes(addMonths(fecha.slice(0, 7), 1))}, o ${soloMes(addMonths(fecha.slice(0, 7), 2))} si compraste después del corte de la tarjeta.</p>`}
+      ${impacto && html`<div class=${'impacto' + (impacto.alerta ? ' alerta' : '')}>
+        <strong>${impacto.texto}</strong>
+        ${impacto.detalle && html`<span>${impacto.detalle}</span>`}
+      </div>`}
       <input class="nota" placeholder="Nota (opcional)" value=${nota} onInput=${(e) => setNota(e.target.value)} />
       <h3 class="paso-titulo">${tipo === 'pago' ? '¿Qué tarjeta pagaste?' : tipo === 'ingreso' ? '¿A dónde llegó?' : '¿Cómo pagaste?'}</h3>
       <div class="rejilla">
@@ -119,6 +145,7 @@ export function Registrar({ config, onCerrar, tipoInicial = 'gasto', prellenado 
           (c) => html`<button class=${'opcion' + (tipo === 'gasto' && c.id === sugerida ? ' sugerida' : '')} onClick=${() => guardar(c.id)}><span class="op-ico">${c.icono}</span>${c.nombre}${tipo === 'gasto' && c.id === sugerida ? html`<span class="op-usual">usual</span>` : ''}</button>`
         )}
       </div>
+      ${tipo === 'gasto' && html`<p class="muted chico">Con débito sale de tu cuenta hoy y cuenta en tu presupuesto de ${soloMes(mesCompra)}.</p>`}
     </div>`}
   <//>`;
 }
@@ -159,6 +186,7 @@ export function EditarMov({ config, mov, onCerrar }) {
       ${m.tipo === 'gasto' && config.tarjetas.some((x) => x.id === m.cuenta) && html`<${Campo} etiqueta="Se paga en" ayuda=${`Normalmente ${soloMes(addMonths(m.fecha.slice(0, 7), 1))}. Cámbialo si compraste después del corte de la tarjeta.`}>
         <input type="month" value=${m.pagoMes || addMonths(m.fecha.slice(0, 7), 1)} onInput=${(e) => e.target.value && setM({ ...m, pagoMes: e.target.value })} />
       <//>`}
+      ${m.tipo === 'gasto' && m.fecha && html`<p class="impacto"><strong>Cuenta en tu presupuesto de ${soloMes(config.tarjetas.some((x) => x.id === m.cuenta) ? addMonths(m.pagoMes || addMonths(m.fecha.slice(0, 7), 1), -1) : m.fecha.slice(0, 7))}</strong></p>`}
       <${Campo} etiqueta="Nota"><input value=${m.nota || ''} onInput=${(e) => setM({ ...m, nota: e.target.value })} /><//>
       <p class="muted">Registrado: ${fechaCorta(mov.fecha)}</p>
       <div class="acciones">

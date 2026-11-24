@@ -11,7 +11,28 @@ import { Plan } from './pantallas/plan.js';
 import { Registrar, EditarMov } from './pantallas/registrar.js';
 import { Mas, Tarjetas, Ahorro, Sueldo, Fijos, Ocio, Escenarios, Recordatorios, Cuenta, Respaldo, textoSync } from './pantallas/ajustes.js';
 
+// Cambia junto con version.json y sw.js en cada publicación.
+const VERSION_APP = 'finanzas-v9';
+
 const leerRuta = () => (location.hash || '#inicio').slice(1);
+
+// Avisa cuando hay una versión nueva publicada (en iPhone la app instalada no se recarga sola).
+function AvisoVersion() {
+  const [nueva, setNueva] = useState(false);
+  useEffect(() => {
+    const revisar = () =>
+      fetch('version.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d && d.version && d.version !== VERSION_APP && setNueva(true))
+        .catch(() => {});
+    revisar();
+    const alVolver = () => document.visibilityState === 'visible' && revisar();
+    document.addEventListener('visibilitychange', alVolver);
+    return () => document.removeEventListener('visibilitychange', alVolver);
+  }, []);
+  if (!nueva) return null;
+  return html`<div class="aviso aviso-info aviso-version"><span>🔄 Hay una versión nueva de la app.</span><button class="btn btn-chico" onClick=${() => location.reload()}>Actualizar</button></div>`;
+}
 const SECCION = { inicio: 'inicio', movs: 'movs', plan: 'plan', meses: 'plan' };
 
 function Bienvenida() {
@@ -86,7 +107,7 @@ function App() {
       <div><span class="marca">Mis finanzas</span><span class="cab-mes">${nombreMes(ymActual(), true)}</span></div>
       <${IndicadorSync} />
     </header>
-    <main><${P} ...${props} /></main>
+    <main><${AvisoVersion} /><${P} ...${props} /></main>
     <nav class="tabs" aria-label="Secciones">
       ${tab('inicio', '🏠', 'Inicio')}
       ${tab('movs', '🧾', 'Movimientos')}

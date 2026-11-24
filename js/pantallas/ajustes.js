@@ -361,7 +361,7 @@ export function Fijos({ config, ir }) {
   const fila = (f) => html`<li><button class="fila fila-btn" onClick=${() => setEditar(f.id)}>
     <span class="ico-circ">${f.icono || '📌'}</span>
     <span class="fila-txt"><span class="fila-tit">${f.nombre}</span>
-      <span class="fila-sub">${f.frecuencia === 'anual' ? `Cada ${MESES_LARGOS[(f.mes || 1) - 1]}` : 'Mensual'}${f.hasta ? ` · hasta ${nombreMes(f.hasta)}` : ''}</span></span>
+      <span class="fila-sub">${f.frecuencia === 'anual' ? `Cada ${MESES_LARGOS[(f.mes || 1) - 1]}` : 'Mensual'}${f.hasta ? (f.pago === 'tarjeta' ? ` · último pago ${nombreMes(addMonths(f.hasta, 1))}` : ` · hasta ${nombreMes(f.hasta)}`) : ''}</span></span>
     <span class=${'chip-pago' + (f.pago === 'tarjeta' ? ' tarjeta' : '')}>${nombrePago(config, f)}</span>
     <span class="fila-monto">${dinero(f.monto)}</span>
   </button></li>`;
@@ -396,16 +396,20 @@ function EditarFijo({ config, id, onCerrar }) {
           <option value="mensual">Mensual</option><option value="anual">Una vez al año</option></select><//>
       </div>
       <${FormaDePago} config=${config} item=${f} onCambio=${(v) => updF((x) => Object.assign(x, v))} />
+      ${f.pago === 'tarjeta' && html`<p class="impacto"><strong>Las fechas y montos son de cuando se carga a la tarjeta.</strong>
+        <span>${f.desde || f.hasta
+          ? `Se carga ${f.desde ? 'desde ' + nombreMes(f.desde, true) : ''}${f.hasta ? ' hasta ' + nombreMes(f.hasta, true) : ''}; lo pagas ${f.desde ? 'desde ' + nombreMes(addMonths(f.desde, 1), true) : ''}${f.hasta ? ' hasta ' + nombreMes(addMonths(f.hasta, 1), true) : ''}.`
+          : 'Cada cargo lo pagas el mes siguiente.'}</span></p>`}
       <div class="dos-col">
         ${f.frecuencia === 'anual'
           ? html`<${Campo} etiqueta="Mes de pago"><select value=${f.mes} onChange=${(e) => updF((x) => { x.mes = Number(e.target.value); })}>${MESES_OPC}</select><//>`
           : html`<${Campo} etiqueta="Día de pago"><${Num} valor=${f.dia} min="1" placeholder="—" onCambio=${(v) => updF((x) => { x.dia = v; })} /><//>`}
-        <${Campo} etiqueta="Termina en"><input type="month" value=${f.hasta || ''} onChange=${(e) => updF((x) => { x.hasta = e.target.value || undefined; })} /><//>
+        <${Campo} etiqueta=${f.pago === 'tarjeta' ? 'Último cargo' : 'Termina en'}><input type="month" value=${f.hasta || ''} onChange=${(e) => updF((x) => { x.hasta = e.target.value || undefined; })} /><//>
       </div>
       <details class="avanzado">
         <summary>Más opciones</summary>
         <div class="form">
-          <${Campo} etiqueta="Empieza en"><input type="month" value=${f.desde || ''} onChange=${(e) => updF((x) => { x.desde = e.target.value || undefined; })} /><//>
+          <${Campo} etiqueta=${f.pago === 'tarjeta' ? 'Primer cargo' : 'Empieza en'}><input type="month" value=${f.desde || ''} onChange=${(e) => updF((x) => { x.desde = e.target.value || undefined; })} /><//>
           <${Campo} etiqueta="¿Cómo cambia con los años?"><select value=${a.tipo} onChange=${(e) => updF((x) => { x.ajuste = { ...(x.ajuste || {}), tipo: e.target.value }; if (!x.base) x.base = hoyIso().slice(0, 7); })}>
             ${AJUSTES.map(([v, t]) => html`<option value=${v}>${t}</option>`)}</select><//>
           ${(a.tipo === 'escalon' || a.tipo === 'porcentaje' || a.tipo === 'colegiatura') && html`<div class="dos-col">

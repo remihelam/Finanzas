@@ -12,7 +12,7 @@ import { Registrar, EditarMov } from './pantallas/registrar.js';
 import { Mas, Tarjetas, Ahorro, Sueldo, Fijos, Ocio, Escenarios, Recordatorios, Cuenta, Respaldo, textoSync } from './pantallas/ajustes.js';
 
 // Cambia junto con version.json y sw.js en cada publicación.
-const VERSION_APP = 'finanzas-v9';
+const VERSION_APP = 'finanzas-v10';
 
 const leerRuta = () => (location.hash || '#inicio').slice(1);
 
